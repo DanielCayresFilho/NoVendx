@@ -1,5 +1,8 @@
 FROM node:20-alpine
 
+# Instalar wget para healthcheck
+RUN apk add --no-cache wget
+
 WORKDIR /app
 
 COPY package*.json ./
