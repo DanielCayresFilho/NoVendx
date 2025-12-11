@@ -1,0 +1,177 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum Role {
+  admin
+  operator
+  supervisor
+}
+
+enum Status {
+  Online
+  Offline
+}
+
+enum LineStatus {
+  active
+  ban
+}
+
+enum Sender {
+  operator
+  contact
+}
+
+enum Speed {
+  fast
+  medium
+  slow
+}
+
+// Models
+model User {
+  id            Int             @id @default(autoincrement())
+  name          String
+  email         String          @unique
+  password      String
+  role          Role
+  segment       Int?
+  line          Int?
+  status        Status          @default(Offline)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([email])
+  @@index([segment])
+  @@index([line])
+  @@index([role, status])
+}
+
+model Segment {
+  id            Int             @id @default(autoincrement())
+  name          String          @unique
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([name])
+}
+
+model Tabulation {
+  id            Int             @id @default(autoincrement())
+  name          String
+  isCPC         Boolean         @default(false)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([name])
+}
+
+model Contact {
+  id            Int             @id @default(autoincrement())
+  name          String
+  phone         String
+  segment       Int?
+  cpf           String?
+  contract      String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([phone])
+  @@index([cpf])
+  @@index([segment])
+}
+
+model Campaign {
+  id                Int       @id @default(autoincrement())
+  name              String
+  contactName       String
+  contactPhone      String
+  contactSegment    Int?
+  dateTime          DateTime  @default(now())
+  lineReceptor      Int?
+  response          Boolean   @default(false)
+  speed             Speed
+  retryCount        Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([contactPhone])
+  @@index([contactSegment])
+  @@index([lineReceptor])
+  @@index([response])
+  @@index([dateTime])
+}
+
+model BlockList {
+  id            Int       @id @default(autoincrement())
+  name          String?
+  phone         String?
+  cpf           String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([phone])
+  @@index([cpf])
+}
+
+model LinesStock {
+  id              Int           @id @default(autoincrement())
+  phone           String        @unique
+  lineStatus      LineStatus    @default(active)
+  segment         Int?
+  linkedTo        Int?
+  evolutionName   String
+  oficial         Boolean       @default(false)
+  token           String?
+  businessID      String?
+  numberId        String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([phone])
+  @@index([lineStatus])
+  @@index([segment])
+  @@index([linkedTo])
+  @@index([evolutionName])
+}
+
+model Evolution {
+  id              Int           @id @default(autoincrement())
+  evolutionName   String        @unique
+  evolutionUrl    String
+  evolutionKey    String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([evolutionName])
+}
+
+model Conversation {
+  id              Int         @id @default(autoincrement())
+  contactName     String
+  contactPhone    String
+  segment         Int?
+  userName        String?
+  userLine        Int?
+  message         String      @db.Text
+  sender          Sender
+  datetime        DateTime    @default(now())
+  tabulation      Int?
+  messageType     String      @default("text")
+  mediaUrl        String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([contactPhone])
+  @@index([segment])
+  @@index([userLine])
+  @@index([tabulation])
+  @@index([datetime])
+}

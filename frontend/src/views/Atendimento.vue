@@ -1,0 +1,333 @@
+<template>
+  <Layout>
+    <div class="flex-1 overflow-hidden flex">
+      <!-- Lista de conversas -->
+      <div class="w-80 border-r border-borderColor bg-white overflow-hidden flex flex-col">
+        <div class="p-4 border-b border-borderColor">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-semibold">Atendimentos</h3>
+            <button
+              @click="showNewChatModal = true"
+              class="w-8 h-8 bg-primary text-white rounded-lg hover:bg-secondary transition-colors flex items-center justify-center"
+            >
+              <i class="fas fa-plus text-sm"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto scrollbar-thin">
+          <div
+            v-for="conv in conversationsStore.activeConversations"
+            :key="conv.contactPhone"
+            @click="selectConversation(conv)"
+            :class="[
+              'p-4 border-b border-borderColor cursor-pointer hover:bg-gray-50 transition-colors',
+              currentConversation?.contactPhone === conv.contactPhone ? 'bg-chatActive' : ''
+            ]"
+          >
+            <div class="flex items-start space-x-3">
+              <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0">
+                <span class="font-bold text-white text-sm">{{ conv.contactName?.charAt(0).toUpperCase() }}</span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                  <h4 class="font-semibold truncate">{{ conv.contactName }}</h4>
+                  <span class="text-xs text-textSecondary">{{ formatTime(conv.datetime) }}</span>
+                </div>
+                <p class="text-sm text-textSecondary truncate flex items-center space-x-1">
+                  <i v-if="conv.sender === 'operator'" class="fas fa-arrow-right text-xs"></i>
+                  <i v-else class="fas fa-arrow-left text-xs"></i>
+                  <span>{{ conv.message }}</span>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="conversationsStore.activeConversations.length === 0" class="p-8 text-center text-textSecondary">
+            <i class="fas fa-inbox text-4xl mb-4 opacity-50"></i>
+            <p>Nenhuma conversa ativa</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Área de conversa -->
+      <div v-if="currentConversation" class="flex-1 flex flex-col overflow-hidden">
+        <!-- Header da conversa -->
+        <div class="bg-white border-b border-borderColor p-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+              <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
+                <span class="font-bold text-white text-sm">{{ currentConversation.contactName?.charAt(0).toUpperCase() }}</span>
+              </div>
+              <div>
+                <h3 class="font-bold">{{ currentConversation.contactName }}</h3>
+                <p class="text-xs text-textSecondary">{{ currentConversation.contactPhone }}</p>
+              </div>
+            </div>
+
+            <!-- Dropdown de tabulações -->
+            <div class="relative">
+              <select
+                v-model="selectedTabulation"
+                @change="handleTabulation"
+                class="px-4 py-2 border border-borderColor rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="">Tabular conversa</option>
+                <option v-for="tab in tabulations" :key="tab.id" :value="tab.id">
+                  {{ tab.name }}
+                </option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Histórico da conversa -->
+        <div ref="messagesContainer" class="flex-1 overflow-y-auto p-6 bg-gray-50 scrollbar-thin">
+          <div class="space-y-4">
+            <div
+              v-for="message in conversationsStore.messages"
+              :key="message.id"
+              :class="[
+                'flex items-start space-x-3',
+                message.sender === 'operator' ? 'justify-end' : 'justify-start'
+              ]"
+            >
+              <div
+                v-if="message.sender === 'contact'"
+                class="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0"
+              >
+                <span class="font-bold text-white text-xs">{{ currentConversation.contactName?.charAt(0).toUpperCase() }}</span>
+              </div>
+
+              <div
+                :class="[
+                  'rounded-2xl p-4 max-w-xl',
+                  message.sender === 'operator'
+                    ? 'bg-primary text-white rounded-tr-none'
+                    : 'bg-white border border-borderColor rounded-tl-none'
+                ]"
+              >
+                <p class="text-sm">{{ message.message }}</p>
+                <span :class="['text-xs mt-2 block', message.sender === 'operator' ? 'text-gray-300' : 'text-textSecondary']">
+                  {{ formatTime(message.datetime) }}
+                </span>
+              </div>
+
+              <div
+                v-if="message.sender === 'operator'"
+                class="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center flex-shrink-0"
+              >
+                <span class="font-bold text-white text-xs">{{ authStore.user?.name?.charAt(0).toUpperCase() }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Área de entrada de mensagem -->
+        <div class="bg-white border-t border-borderColor p-4">
+          <form @submit.prevent="sendMessage" class="flex items-center space-x-3">
+            <button type="button" class="p-2 rounded-lg hover:bg-gray-100 transition-colors">
+              <i class="fas fa-paperclip text-textSecondary"></i>
+            </button>
+
+            <div class="flex-1 relative">
+              <input
+                v-model="messageText"
+                type="text"
+                placeholder="Digite sua mensagem..."
+                class="w-full px-4 py-3 border border-borderColor rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+
+            <button
+              type="submit"
+              :disabled="!messageText.trim()"
+              class="bg-primary text-white px-4 py-3 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <i class="fas fa-paper-plane"></i>
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Mensagem quando não há conversa selecionada -->
+      <div v-else class="flex-1 flex items-center justify-center bg-gray-50">
+        <div class="text-center text-textSecondary">
+          <i class="fas fa-comments text-6xl mb-4 opacity-30"></i>
+          <p class="text-lg">Selecione uma conversa para começar</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal para nova conversa 1x1 -->
+    <div v-if="showNewChatModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-white rounded-2xl p-6 w-full max-w-md">
+        <h3 class="text-xl font-bold mb-4">Nova Conversa</h3>
+        <form @submit.prevent="startNewChat" class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-textPrimary mb-2">Nome</label>
+            <input
+              v-model="newChat.name"
+              type="text"
+              required
+              class="w-full px-4 py-3 border border-borderColor rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-textPrimary mb-2">Telefone</label>
+            <input
+              v-model="newChat.phone"
+              type="text"
+              required
+              class="w-full px-4 py-3 border border-borderColor rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="5511999999999"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-textPrimary mb-2">CPF</label>
+            <input
+              v-model="newChat.cpf"
+              type="text"
+              class="w-full px-4 py-3 border border-borderColor rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+          <div class="flex space-x-3">
+            <button
+              type="button"
+              @click="showNewChatModal = false"
+              class="flex-1 px-4 py-3 border border-borderColor rounded-lg hover:bg-gray-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              class="flex-1 bg-primary text-white px-4 py-3 rounded-lg hover:bg-secondary"
+            >
+              Iniciar Conversa
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </Layout>
+</template>
+
+<script setup>
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { useAuthStore } from '../stores/auth'
+import { useConversationsStore } from '../stores/conversations'
+import Layout from '../components/layout/Layout.vue'
+import api from '../services/api'
+
+const authStore = useAuthStore()
+const conversationsStore = useConversationsStore()
+
+const currentConversation = ref(null)
+const messageText = ref('')
+const selectedTabulation = ref('')
+const tabulations = ref([])
+const showNewChatModal = ref(false)
+const messagesContainer = ref(null)
+
+const newChat = ref({
+  name: '',
+  phone: '',
+  cpf: '',
+})
+
+onMounted(async () => {
+  // Inicializar listeners do Socket
+  conversationsStore.initializeSocketListeners()
+
+  // Buscar conversas ativas
+  await conversationsStore.fetchActiveConversations()
+
+  // Buscar tabulações
+  const response = await api.get('/tabulations')
+  tabulations.value = response.data
+})
+
+const selectConversation = async (conv) => {
+  currentConversation.value = conv
+  conversationsStore.setCurrentConversation(conv)
+  await nextTick()
+  scrollToBottom()
+}
+
+const sendMessage = async () => {
+  if (!messageText.value.trim() || !currentConversation.value) return
+
+  await conversationsStore.sendMessage(
+    currentConversation.value.contactPhone,
+    messageText.value
+  )
+
+  messageText.value = ''
+  await nextTick()
+  scrollToBottom()
+}
+
+const handleTabulation = async () => {
+  if (!selectedTabulation.value || !currentConversation.value) return
+
+  if (confirm('Deseja realmente tabular e finalizar esta conversa?')) {
+    await conversationsStore.tabulateConversation(
+      currentConversation.value.contactPhone,
+      selectedTabulation.value
+    )
+    currentConversation.value = null
+    selectedTabulation.value = ''
+  }
+}
+
+const startNewChat = async () => {
+  try {
+    // Criar contato
+    await api.post('/contacts', {
+      name: newChat.value.name,
+      phone: newChat.value.phone,
+      cpf: newChat.value.cpf,
+      segment: authStore.user.segment,
+    })
+
+    // Criar primeira mensagem
+    await api.post('/conversations', {
+      contactName: newChat.value.name,
+      contactPhone: newChat.value.phone,
+      segment: authStore.user.segment,
+      userName: authStore.user.name,
+      userLine: authStore.user.line,
+      message: 'Conversa iniciada',
+      sender: 'operator',
+    })
+
+    // Recarregar conversas
+    await conversationsStore.fetchActiveConversations()
+
+    // Fechar modal
+    showNewChatModal.value = false
+    newChat.value = { name: '', phone: '', cpf: '' }
+  } catch (error) {
+    alert('Erro ao iniciar conversa')
+  }
+}
+
+const formatTime = (datetime) => {
+  if (!datetime) return ''
+  const date = new Date(datetime)
+  return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+}
+
+const scrollToBottom = () => {
+  if (messagesContainer.value) {
+    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+  }
+}
+
+watch(
+  () => conversationsStore.messages.length,
+  () => {
+    nextTick(() => scrollToBottom())
+  }
+)
+</script>

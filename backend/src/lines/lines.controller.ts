@@ -1,0 +1,102 @@
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import { LinesService } from './lines.service';
+import { CreateLineDto } from './dto/create-line.dto';
+import { UpdateLineDto } from './dto/update-line.dto';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
+import { Role } from '@prisma/client';
+
+@Controller('lines')
+@UseGuards(JwtAuthGuard, RolesGuard)
+export class LinesController {
+  constructor(private readonly linesService: LinesService) {}
+
+  @Post()
+  @Roles(Role.admin)
+  create(@Body() createLineDto: CreateLineDto) {
+    console.log('📝 Dados recebidos para criar linha:', createLineDto);
+    return this.linesService.create(createLineDto);
+  }
+
+  @Get()
+  @Roles(Role.admin)
+  findAll(@Query() filters: any) {
+    return this.linesService.findAll(filters);
+  }
+
+  @Get('schema')
+  @Roles(Role.admin)
+  getSchema() {
+    return {
+      message: 'Estrutura esperada para criar uma linha',
+      required: {
+        phone: 'string (obrigatório) - Ex: "5511999999999"',
+        evolutionName: 'string (obrigatório) - Ex: "Evolution01"',
+      },
+      optional: {
+        segment: 'number (opcional) - ID do segmento',
+        oficial: 'boolean (opcional) - Se é linha oficial',
+        lineStatus: 'string (opcional) - "active" ou "ban"',
+        linkedTo: 'number (opcional) - ID do usuário vinculado',
+        token: 'string (opcional)',
+        businessID: 'string (opcional)',
+        numberId: 'string (opcional)',
+      },
+      example: {
+        phone: '5511999999999',
+        evolutionName: 'Evolution01',
+        segment: 1,
+        oficial: false,
+      },
+    };
+  }
+
+  @Get('evolutions')
+  @Roles(Role.admin)
+  getEvolutions() {
+    return this.linesService.getEvolutions();
+  }
+
+  @Get('instances/:evolutionName')
+  @Roles(Role.admin)
+  getInstances(@Param('evolutionName') evolutionName: string) {
+    return this.linesService.fetchInstancesFromEvolution(evolutionName);
+  }
+
+  @Get('available/:segment')
+  @Roles(Role.admin)
+  getAvailable(@Param('segment') segment: string) {
+    return this.linesService.getAvailableLines(+segment);
+  }
+
+  @Get(':id')
+  @Roles(Role.admin)
+  findOne(@Param('id') id: string) {
+    return this.linesService.findOne(+id);
+  }
+
+  @Get(':id/qrcode')
+  @Roles(Role.admin)
+  getQRCode(@Param('id') id: string) {
+    return this.linesService.getQRCode(+id);
+  }
+
+  @Patch(':id')
+  @Roles(Role.admin)
+  update(@Param('id') id: string, @Body() updateLineDto: UpdateLineDto) {
+    return this.linesService.update(+id, updateLineDto);
+  }
+
+  @Post(':id/ban')
+  @Roles(Role.admin)
+  handleBan(@Param('id') id: string) {
+    return this.linesService.handleBannedLine(+id);
+  }
+
+  @Delete(':id')
+  @Roles(Role.admin)
+  remove(@Param('id') id: string) {
+    return this.linesService.remove(+id);
+  }
+}
