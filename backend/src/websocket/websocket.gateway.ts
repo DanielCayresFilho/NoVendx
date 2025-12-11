@@ -16,7 +16,17 @@ import axios from 'axios';
 
 @WebSocketGateway({
   cors: {
-    origin: ['http://localhost:5173', 'http://localhost:3001'],
+    origin: (origin, callback) => {
+      const allowedOrigins = process.env.CORS_ORIGINS
+        ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
+        : ['http://localhost:5173', 'http://localhost:3001'];
+      
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
   },
 })
@@ -184,6 +194,8 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
   // Método para emitir mensagens recebidas via webhook
   async emitNewMessage(conversation: any) {
+    console.log(`📤 Emitindo new-message para contactPhone: ${conversation.contactPhone}`);
+    
     // Emitir para o operador responsável
     if (conversation.userLine) {
       const users = await this.prisma.user.findMany({
@@ -193,6 +205,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       users.forEach(user => {
         const socketId = this.connectedUsers.get(user.id);
         if (socketId) {
+          console.log(`  → Enviando para ${user.name} (${user.role})`);
           this.server.to(socketId).emit('new-message', conversation);
         }
       });
