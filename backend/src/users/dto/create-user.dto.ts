@@ -1,4 +1,4 @@
-import { IsEmail, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, MinLength, ValidateIf } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { Role, Status } from '@prisma/client';
 
@@ -25,8 +25,11 @@ export class CreateUserDto {
     const num = Number(value);
     return isNaN(num) ? undefined : num;
   })
-  @IsNumber()
+  @ValidateIf((o) => o.role === 'admin', { message: 'Segmento é opcional para administradores' })
   @IsOptional()
+  @ValidateIf((o) => o.role !== 'admin')
+  @IsNotEmpty({ message: 'Segmento é obrigatório para operadores e supervisores' })
+  @IsNumber()
   segment?: number;
 
   @Transform(({ value }) => {
