@@ -2,7 +2,7 @@
   <Layout>
     <div class="flex-1 flex flex-col overflow-hidden">
       <!-- Header -->
-      <div class="bg-white border-b border-borderColor px-6 py-4">
+      <div class="section-header px-6 py-4 mb-4 shadow-sm">
         <div class="flex items-center justify-between">
           <div>
             <h2 class="text-2xl font-bold">{{ title }}</h2>
@@ -10,7 +10,7 @@
           </div>
           <button
             @click="$emit('new')"
-            class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-secondary transition-colors flex items-center space-x-2"
+            class="btn-primary px-4 py-2 rounded-lg flex items-center space-x-2"
           >
             <i class="fas fa-plus"></i>
             <span>Novo</span>
@@ -19,7 +19,7 @@
       </div>
 
       <!-- Filtro -->
-      <div class="bg-white px-6 py-4 border-b border-borderColor">
+      <div class="glass-panel px-6 py-4 border-b border-borderColor/60 rounded-2xl shadow-sm mb-4">
         <div class="relative">
           <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
           <input
@@ -27,16 +27,16 @@
             @input="$emit('update:search', $event.target.value)"
             type="text"
             placeholder="Buscar..."
-            class="w-full pl-10 pr-4 py-2 border border-borderColor rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            class="input-soft w-full pl-10 pr-4 py-3"
           />
         </div>
       </div>
 
       <!-- Tabela -->
       <div class="flex-1 overflow-auto p-6">
-        <div class="bg-white rounded-lg shadow-sm overflow-hidden">
-          <table class="w-full">
-            <thead class="bg-gray-50 border-b border-borderColor">
+        <div class="glass-panel rounded-2xl shadow-lg overflow-hidden">
+          <table class="w-full data-table">
+            <thead class="bg-gray-50 border-b border-borderColor/60">
               <tr>
                 <th
                   v-for="column in columns"
@@ -50,7 +50,7 @@
                 </th>
               </tr>
             </thead>
-            <tbody class="bg-white divide-y divide-borderColor">
+            <tbody class="bg-white/90 divide-y divide-borderColor/60">
               <tr v-for="item in items" :key="item.id" class="hover:bg-gray-50">
                 <td
                   v-for="column in columns"

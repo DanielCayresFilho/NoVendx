@@ -1,14 +1,14 @@
 <template>
   <Layout>
-    <div class="flex-1 overflow-hidden flex">
+    <div class="flex-1 overflow-hidden flex gap-4 xl:gap-6 px-2 md:px-0 flex-col lg:flex-row fade-in-up">
       <!-- Lista de conversas -->
-      <div class="w-80 border-r border-borderColor bg-white overflow-hidden flex flex-col">
-        <div class="p-4 border-b border-borderColor">
-          <div class="flex items-center justify-between mb-4">
+      <div class="w-full lg:w-80 glass-panel rounded-2xl overflow-hidden flex flex-col shadow-lg">
+        <div class="p-4 border-b border-borderColor/60">
+          <div class="flex items-center justify-between mb-2">
             <h3 class="font-semibold">Atendimentos</h3>
             <button
               @click="showNewChatModal = true"
-              class="w-8 h-8 bg-primary text-white rounded-lg hover:bg-secondary transition-colors flex items-center justify-center"
+              class="w-9 h-9 btn-primary flex items-center justify-center text-sm"
             >
               <i class="fas fa-plus text-sm"></i>
             </button>
@@ -21,8 +21,8 @@
             :key="conv.contactPhone"
             @click="selectConversation(conv)"
             :class="[
-              'p-4 border-b border-borderColor cursor-pointer hover:bg-gray-50 transition-colors',
-              currentConversation?.contactPhone === conv.contactPhone ? 'bg-chatActive' : ''
+              'chat-item p-4 border-b border-borderColor/60 cursor-pointer transition-colors',
+              currentConversation?.contactPhone === conv.contactPhone ? 'chat-item-active' : ''
             ]"
           >
             <div class="flex items-start space-x-3">
@@ -51,9 +51,9 @@
       </div>
 
       <!-- Área de conversa -->
-      <div v-if="currentConversation" class="flex-1 flex flex-col overflow-hidden">
+      <div v-if="currentConversation" class="flex-1 flex flex-col overflow-hidden glass-panel rounded-2xl shadow-lg">
         <!-- Header da conversa -->
-        <div class="bg-white border-b border-borderColor p-4">
+        <div class="bg-white/80 backdrop-blur border-b border-borderColor/60 p-4 sticky top-0 z-10">
           <div class="flex items-center justify-between">
             <div class="flex items-center space-x-3">
               <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
@@ -70,7 +70,7 @@
               <select
                 v-model="selectedTabulation"
                 @change="handleTabulation"
-                class="px-4 py-2 border border-borderColor rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                class="input-soft px-4 py-2"
               >
                 <option value="">Tabular conversa</option>
                 <option v-for="tab in tabulations" :key="tab.id" :value="tab.id">
@@ -101,7 +101,7 @@
 
               <div
                 :class="[
-                  'rounded-2xl p-4 max-w-xl',
+                  'chat-bubble rounded-2xl p-4 max-w-xl shadow-sm',
                   message.sender === 'operator'
                     ? 'bg-primary text-white rounded-tr-none'
                     : 'bg-white border border-borderColor rounded-tl-none'
@@ -124,7 +124,7 @@
         </div>
 
         <!-- Área de entrada de mensagem -->
-        <div class="bg-white border-t border-borderColor p-4">
+        <div class="bg-white/85 backdrop-blur border-t border-borderColor/60 p-4">
           <form @submit.prevent="sendMessage" class="flex items-center space-x-3">
             <button type="button" class="p-2 rounded-lg hover:bg-gray-100 transition-colors">
               <i class="fas fa-paperclip text-textSecondary"></i>
@@ -135,14 +135,14 @@
                 v-model="messageText"
                 type="text"
                 placeholder="Digite sua mensagem..."
-                class="w-full px-4 py-3 border border-borderColor rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                class="input-soft w-full px-4 py-3"
               />
             </div>
 
             <button
               type="submit"
               :disabled="!messageText.trim()"
-              class="bg-primary text-white px-4 py-3 rounded-lg hover:bg-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              class="btn-primary px-5 py-3 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <i class="fas fa-paper-plane"></i>
             </button>
@@ -160,8 +160,8 @@
     </div>
 
     <!-- Modal para nova conversa 1x1 -->
-    <div v-if="showNewChatModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-white rounded-2xl p-6 w-full max-w-md">
+    <div v-if="showNewChatModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
+      <div class="glass-panel rounded-2xl p-6 w-full max-w-md">
         <h3 class="text-xl font-bold mb-4">Nova Conversa</h3>
         <form @submit.prevent="startNewChat" class="space-y-4">
           <div>
@@ -170,7 +170,7 @@
               v-model="newChat.name"
               type="text"
               required
-              class="w-full px-4 py-3 border border-borderColor rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              class="input-soft w-full px-4 py-3"
             />
           </div>
           <div>
@@ -179,7 +179,7 @@
               v-model="newChat.phone"
               type="text"
               required
-              class="w-full px-4 py-3 border border-borderColor rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              class="input-soft w-full px-4 py-3"
               placeholder="5511999999999"
             />
           </div>
@@ -188,20 +188,20 @@
             <input
               v-model="newChat.cpf"
               type="text"
-              class="w-full px-4 py-3 border border-borderColor rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              class="input-soft w-full px-4 py-3"
             />
           </div>
           <div class="flex space-x-3">
             <button
               type="button"
               @click="showNewChatModal = false"
-              class="flex-1 px-4 py-3 border border-borderColor rounded-lg hover:bg-gray-50"
+              class="flex-1 px-4 py-3 btn-secondary"
             >
               Cancelar
             </button>
             <button
               type="submit"
-              class="flex-1 bg-primary text-white px-4 py-3 rounded-lg hover:bg-secondary"
+              class="flex-1 btn-primary text-center"
             >
               Iniciar Conversa
             </button>

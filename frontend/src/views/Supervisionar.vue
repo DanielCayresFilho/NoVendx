@@ -1,16 +1,16 @@
 <template>
   <Layout>
-    <div class="flex-1 overflow-hidden flex">
+    <div class="flex-1 overflow-hidden flex gap-4 xl:gap-6 px-2 md:px-0 flex-col lg:flex-row fade-in-up">
       <!-- Lista de conversas -->
-      <div class="w-80 border-r border-borderColor bg-white overflow-hidden flex flex-col">
-        <div class="p-4 border-b border-borderColor">
-          <h3 class="font-semibold mb-4">Supervisão</h3>
+      <div class="w-full lg:w-80 glass-panel rounded-2xl overflow-hidden flex flex-col shadow-lg">
+        <div class="p-4 border-b border-borderColor/60">
+          <h3 class="font-semibold mb-3">Supervisão</h3>
 
           <!-- Filtro por operador -->
           <select
             v-model="selectedOperator"
             @change="filterConversations"
-            class="w-full px-4 py-2 border border-borderColor rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            class="input-soft w-full px-4 py-2"
           >
             <option value="">Todos os operadores</option>
             <option v-for="op in operators" :key="op.id" :value="op.id">
@@ -25,8 +25,8 @@
             :key="conv.id"
             @click="selectConversation(conv)"
             :class="[
-              'p-4 border-b border-borderColor cursor-pointer hover:bg-gray-50 transition-colors',
-              currentConversation?.id === conv.id ? 'bg-chatActive' : ''
+              'chat-item p-4 border-b border-borderColor/60 cursor-pointer transition-colors',
+              currentConversation?.id === conv.id ? 'chat-item-active' : ''
             ]"
           >
             <div class="flex items-start space-x-3">
@@ -47,9 +47,9 @@
       </div>
 
       <!-- Área de conversa (somente leitura) -->
-      <div v-if="currentConversation" class="flex-1 flex flex-col overflow-hidden">
+      <div v-if="currentConversation" class="flex-1 flex flex-col overflow-hidden glass-panel rounded-2xl shadow-lg">
         <!-- Header da conversa -->
-        <div class="bg-white border-b border-borderColor p-4">
+        <div class="bg-white/80 backdrop-blur border-b border-borderColor/60 p-4 sticky top-0 z-10">
           <div class="flex items-center space-x-3">
             <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
               <span class="font-bold text-white text-sm">{{ currentConversation.contactName?.charAt(0).toUpperCase() }}</span>
@@ -86,7 +86,7 @@
 
               <div
                 :class="[
-                  'rounded-2xl p-4 max-w-xl',
+                  'chat-bubble rounded-2xl p-4 max-w-xl shadow-sm',
                   message.sender === 'operator'
                     ? 'bg-primary text-white rounded-tr-none'
                     : 'bg-white border border-borderColor rounded-tl-none'

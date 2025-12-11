@@ -15,6 +15,7 @@ import { ConversationsModule } from './conversations/conversations.module';
 import { WebsocketModule } from './websocket/websocket.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { ReportsModule } from './reports/reports.module';
+import { MediaModule } from './media/media.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -44,6 +45,7 @@ import { HealthController } from './health/health.controller';
     WebsocketModule,
     WebhooksModule,
     ReportsModule,
+    MediaModule,
   ],
   controllers: [HealthController],
   providers: [PrismaService],

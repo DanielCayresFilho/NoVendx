@@ -19,21 +19,21 @@
     </template>
   </CrudTable>
 
-  <div v-if="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-2xl p-6 w-full max-w-md">
+  <div v-if="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
+    <div class="modal-card p-6 w-full max-w-md">
       <h3 class="text-xl font-bold mb-4">{{ editingItem ? 'Editar' : 'Nova' }} Tabulação</h3>
       <form @submit.prevent="saveTabulation" class="space-y-4">
         <div>
           <label class="block text-sm font-medium mb-2">Nome</label>
-          <input v-model="form.name" type="text" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" />
+          <input v-model="form.name" type="text" required class="form-control w-full" />
         </div>
         <div class="flex items-center space-x-2">
           <input v-model="form.isCPC" type="checkbox" id="isCPC" class="w-4 h-4" />
           <label for="isCPC" class="text-sm font-medium">É CPC</label>
         </div>
         <div class="flex space-x-3">
-          <button type="button" @click="showModal = false" class="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">Cancelar</button>
-          <button type="submit" class="flex-1 bg-primary text-white px-4 py-2 rounded-lg hover:bg-secondary">Salvar</button>
+          <button type="button" @click="showModal = false" class="flex-1 btn-secondary">Cancelar</button>
+          <button type="submit" class="flex-1 btn-primary text-center">Salvar</button>
         </div>
       </form>
     </div>

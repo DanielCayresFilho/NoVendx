@@ -28,18 +28,18 @@
     </template>
   </CrudTable>
 
-  <div v-if="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-    <div class="bg-white rounded-2xl p-6 w-full max-w-md my-8">
+  <div v-if="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto px-4">
+    <div class="modal-card p-6 w-full max-w-md my-8">
       <h3 class="text-xl font-bold mb-4">{{ editingItem ? 'Editar' : 'Nova' }} Linha</h3>
       <form @submit.prevent="saveLine" class="space-y-4">
         <div>
           <label class="block text-sm font-medium mb-2">Telefone</label>
-          <input v-model="form.phone" type="text" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" placeholder="5511999999999" />
+          <input v-model="form.phone" type="text" required class="form-control w-full" placeholder="5511999999999" />
         </div>
 
         <div>
           <label class="block text-sm font-medium mb-2">Segmento</label>
-          <select v-model="form.segment" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary">
+          <select v-model="form.segment" class="form-control w-full">
             <option :value="null">Nenhum</option>
             <option v-for="seg in segments" :key="seg.id" :value="seg.id">{{ seg.name }}</option>
           </select>
@@ -47,7 +47,7 @@
 
         <div>
           <label class="block text-sm font-medium mb-2">Evolution</label>
-          <select v-model="form.evolutionName" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary">
+          <select v-model="form.evolutionName" required class="form-control w-full">
             <option value="">Selecione</option>
             <option v-for="evo in evolutions" :key="evo.id" :value="evo.evolutionName">{{ evo.evolutionName }}</option>
           </select>
@@ -61,21 +61,21 @@
         <div v-if="form.oficial" class="space-y-4 p-4 bg-gray-50 rounded-lg">
           <div>
             <label class="block text-sm font-medium mb-2">Token</label>
-            <input v-model="form.token" type="text" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" />
+            <input v-model="form.token" type="text" class="form-control w-full" />
           </div>
           <div>
             <label class="block text-sm font-medium mb-2">Business ID</label>
-            <input v-model="form.businessID" type="text" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" />
+            <input v-model="form.businessID" type="text" class="form-control w-full" />
           </div>
           <div>
             <label class="block text-sm font-medium mb-2">Number ID</label>
-            <input v-model="form.numberId" type="text" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" />
+            <input v-model="form.numberId" type="text" class="form-control w-full" />
           </div>
         </div>
 
         <div class="flex space-x-3">
-          <button type="button" @click="showModal = false" class="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">Cancelar</button>
-          <button type="submit" class="flex-1 bg-primary text-white px-4 py-2 rounded-lg hover:bg-secondary">Salvar</button>
+          <button type="button" @click="showModal = false" class="flex-1 btn-secondary">Cancelar</button>
+          <button type="submit" class="flex-1 btn-primary text-center">Salvar</button>
         </div>
       </form>
 
@@ -93,7 +93,7 @@
 
   <!-- Modal QR Code -->
   <div v-if="showQRModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-    <div class="bg-white rounded-2xl p-6 w-full max-w-md">
+    <div class="modal-card p-6 w-full max-w-md">
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-xl font-bold">QR Code - {{ editingItem?.phone }}</h3>
         <button

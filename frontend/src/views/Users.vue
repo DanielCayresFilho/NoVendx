@@ -39,25 +39,25 @@
   </CrudTable>
 
   <!-- Modal -->
-  <div v-if="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-2xl p-6 w-full max-w-md">
+  <div v-if="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
+    <div class="modal-card p-6 w-full max-w-md">
       <h3 class="text-xl font-bold mb-4">{{ editingItem ? 'Editar' : 'Novo' }} Usuário</h3>
       <form @submit.prevent="saveUser" class="space-y-4">
         <div>
           <label class="block text-sm font-medium mb-2">Nome</label>
-          <input v-model="form.name" type="text" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" />
+          <input v-model="form.name" type="text" required class="form-control w-full" />
         </div>
         <div>
           <label class="block text-sm font-medium mb-2">Email</label>
-          <input v-model="form.email" type="email" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" />
+          <input v-model="form.email" type="email" required class="form-control w-full" />
         </div>
         <div v-if="!editingItem">
           <label class="block text-sm font-medium mb-2">Senha</label>
-          <input v-model="form.password" type="password" :required="!editingItem" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" />
+          <input v-model="form.password" type="password" :required="!editingItem" class="form-control w-full" />
         </div>
         <div>
           <label class="block text-sm font-medium mb-2">Role</label>
-          <select v-model="form.role" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary">
+          <select v-model="form.role" required class="form-control w-full">
             <option value="admin">Admin</option>
             <option value="supervisor">Supervisor</option>
             <option value="operator">Operador</option>
@@ -65,7 +65,7 @@
         </div>
         <div>
           <label class="block text-sm font-medium mb-2">Linha WhatsApp</label>
-          <select v-model="form.line" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary">
+          <select v-model="form.line" class="form-control w-full">
             <option :value="null">Nenhuma</option>
             <option v-for="line in lines" :key="line.id" :value="line.id">
               {{ line.phone }} - {{ line.evolutionName }}
@@ -74,8 +74,8 @@
           <p class="text-xs text-gray-500 mt-1">Linha que será usada para enviar mensagens</p>
         </div>
         <div class="flex space-x-3">
-          <button type="button" @click="showModal = false" class="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">Cancelar</button>
-          <button type="submit" class="flex-1 bg-primary text-white px-4 py-2 rounded-lg hover:bg-secondary">Salvar</button>
+          <button type="button" @click="showModal = false" class="flex-1 btn-secondary">Cancelar</button>
+          <button type="submit" class="flex-1 btn-primary text-center">Salvar</button>
         </div>
       </form>
     </div>

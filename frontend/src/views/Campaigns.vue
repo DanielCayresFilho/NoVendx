@@ -8,7 +8,7 @@
       </div>
 
       <!-- Formulário de Nova Campanha -->
-      <div class="p-6 bg-white border-b border-borderColor">
+      <div class="p-6 glass-panel rounded-2xl shadow-sm border border-borderColor/60">
         <form @submit.prevent="createCampaign" class="space-y-4">
           <div class="grid grid-cols-3 gap-4">
             <div>
@@ -17,7 +17,7 @@
                 v-model="form.name"
                 type="text"
                 required
-                class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                class="form-control w-full"
                 placeholder="Campanha de Natal"
               />
             </div>
@@ -27,7 +27,7 @@
               <select
                 v-model="form.segment"
                 required
-                class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                class="form-control w-full"
               >
                 <option value="">Selecione</option>
                 <option v-for="seg in segments" :key="seg.id" :value="seg.id">{{ seg.name }}</option>
@@ -39,7 +39,7 @@
               <select
                 v-model="form.speed"
                 required
-                class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                class="form-control w-full"
               >
                 <option value="fast">Rápida (3 min)</option>
                 <option value="medium">Média (6 min)</option>
@@ -53,7 +53,7 @@
             <textarea
               v-model="form.message"
               rows="3"
-              class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+              class="form-control w-full"
               placeholder="Digite a mensagem que será enviada para todos os contatos..."
             ></textarea>
           </div>
@@ -66,7 +66,7 @@
                 type="file"
                 accept=".csv"
                 @change="handleFileChange"
-                class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary"
+                class="form-control w-full"
               />
               <p class="text-xs text-textSecondary mt-1">Formato: name,phone</p>
             </div>
@@ -74,7 +74,7 @@
             <button
               type="submit"
               :disabled="!selectedFile || loading"
-              class="mt-6 bg-primary text-white px-6 py-2 rounded-lg hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              class="mt-6 btn-primary px-6 py-3 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               <i class="fas fa-paper-plane"></i>
               <span>{{ loading ? 'Enviando...' : 'Enviar Campanha' }}</span>
@@ -161,8 +161,8 @@
   </Layout>
 
   <!-- Modal de Estatísticas -->
-  <div v-if="showStatsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-2xl p-6 w-full max-w-md">
+  <div v-if="showStatsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
+    <div class="modal-card p-6 w-full max-w-md">
       <h3 class="text-xl font-bold mb-4">Estatísticas - {{ selectedCampaign?.name }}</h3>
 
       <div v-if="stats" class="space-y-4">
@@ -188,7 +188,7 @@
 
       <button
         @click="showStatsModal = false"
-        class="w-full mt-4 px-4 py-2 border rounded-lg hover:bg-gray-50"
+        class="w-full mt-4 btn-secondary"
       >
         Fechar
       </button>

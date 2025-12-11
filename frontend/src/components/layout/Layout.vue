@@ -1,7 +1,7 @@
 <template>
-  <div class="flex h-screen overflow-hidden bg-backgroundLight">
+  <div class="app-shell flex h-screen overflow-hidden">
     <Sidebar />
-    <main class="flex-1 overflow-hidden flex flex-col">
+    <main class="flex-1 overflow-hidden flex flex-col app-content">
       <slot />
     </main>
   </div>

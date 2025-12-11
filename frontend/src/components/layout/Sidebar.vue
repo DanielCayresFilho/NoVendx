@@ -1,5 +1,5 @@
 <template>
-  <aside class="w-64 bg-backgroundDark text-white flex flex-col flex-shrink-0 h-screen">
+  <aside class="sidebar-transition w-72 bg-backgroundDark text-white flex flex-col flex-shrink-0 h-screen">
     <!-- Logo e nome da empresa -->
     <div class="p-6 border-b border-gray-800">
       <div class="flex items-center space-x-3">
@@ -22,8 +22,7 @@
           <li>
             <router-link
               to="/atendimento"
-              class="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors duration-200"
-              active-class="bg-gray-800"
+              :class="['nav-link', isActive('/atendimento') && 'nav-link-active']"
             >
               <i class="fas fa-headset text-secondary w-5"></i>
               <span>Atendimento</span>
@@ -39,8 +38,7 @@
           <li>
             <router-link
               to="/supervisionar"
-              class="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors duration-200"
-              active-class="bg-gray-800"
+              :class="['nav-link', isActive('/supervisionar') && 'nav-link-active']"
             >
               <i class="fas fa-eye text-warning w-5"></i>
               <span>Supervisionar</span>
@@ -49,8 +47,7 @@
           <li>
             <router-link
               to="/contacts"
-              class="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors duration-200"
-              active-class="bg-gray-800"
+              :class="['nav-link', isActive('/contacts') && 'nav-link-active']"
             >
               <i class="fas fa-address-book text-secondary w-5"></i>
               <span>Contatos</span>
@@ -59,8 +56,7 @@
           <li>
             <router-link
               to="/campaigns"
-              class="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors duration-200"
-              active-class="bg-gray-800"
+              :class="['nav-link', isActive('/campaigns') && 'nav-link-active']"
             >
               <i class="fas fa-bullhorn text-primary w-5"></i>
               <span>Campanhas</span>
@@ -69,8 +65,7 @@
           <li>
             <router-link
               to="/tabulations"
-              class="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors duration-200"
-              active-class="bg-gray-800"
+              :class="['nav-link', isActive('/tabulations') && 'nav-link-active']"
             >
               <i class="fas fa-table text-whatsapp w-5"></i>
               <span>Tabulações</span>
@@ -79,8 +74,7 @@
           <li>
             <router-link
               to="/segments"
-              class="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors duration-200"
-              active-class="bg-gray-800"
+              :class="['nav-link', isActive('/segments') && 'nav-link-active']"
             >
               <i class="fas fa-filter text-error w-5"></i>
               <span>Segmentos</span>
@@ -89,8 +83,7 @@
           <li>
             <router-link
               to="/blocklist"
-              class="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors duration-200"
-              active-class="bg-gray-800"
+              :class="['nav-link', isActive('/blocklist') && 'nav-link-active']"
             >
               <i class="fas fa-ban text-gray-400 w-5"></i>
               <span>Blocklist</span>
@@ -106,8 +99,7 @@
           <li>
             <router-link
               to="/contacts"
-              class="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors duration-200"
-              active-class="bg-gray-800"
+              :class="['nav-link', isActive('/contacts') && 'nav-link-active']"
             >
               <i class="fas fa-address-book text-secondary w-5"></i>
               <span>Contatos</span>
@@ -116,8 +108,7 @@
           <li>
             <router-link
               to="/campaigns"
-              class="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors duration-200"
-              active-class="bg-gray-800"
+              :class="['nav-link', isActive('/campaigns') && 'nav-link-active']"
             >
               <i class="fas fa-bullhorn text-primary w-5"></i>
               <span>Campanhas</span>
@@ -126,8 +117,7 @@
           <li>
             <router-link
               to="/tabulations"
-              class="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors duration-200"
-              active-class="bg-gray-800"
+              :class="['nav-link', isActive('/tabulations') && 'nav-link-active']"
             >
               <i class="fas fa-table text-whatsapp w-5"></i>
               <span>Tabulações</span>
@@ -136,8 +126,7 @@
           <li>
             <router-link
               to="/segments"
-              class="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors duration-200"
-              active-class="bg-gray-800"
+              :class="['nav-link', isActive('/segments') && 'nav-link-active']"
             >
               <i class="fas fa-filter text-error w-5"></i>
               <span>Segmentos</span>
@@ -146,8 +135,7 @@
           <li>
             <router-link
               to="/blocklist"
-              class="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors duration-200"
-              active-class="bg-gray-800"
+              :class="['nav-link', isActive('/blocklist') && 'nav-link-active']"
             >
               <i class="fas fa-ban text-gray-400 w-5"></i>
               <span>Blocklist</span>
@@ -156,8 +144,7 @@
           <li>
             <router-link
               to="/evolution"
-              class="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors duration-200"
-              active-class="bg-gray-800"
+              :class="['nav-link', isActive('/evolution') && 'nav-link-active']"
             >
               <i class="fas fa-sync-alt text-primary w-5"></i>
               <span>Evolution</span>
@@ -166,8 +153,7 @@
           <li>
             <router-link
               to="/lines"
-              class="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors duration-200"
-              active-class="bg-gray-800"
+              :class="['nav-link', isActive('/lines') && 'nav-link-active']"
             >
               <i class="fas fa-phone-alt text-success w-5"></i>
               <span>Linhas</span>
@@ -176,8 +162,7 @@
           <li>
             <router-link
               to="/users"
-              class="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors duration-200"
-              active-class="bg-gray-800"
+              :class="['nav-link', isActive('/users') && 'nav-link-active']"
             >
               <i class="fas fa-users text-warning w-5"></i>
               <span>Usuários</span>
@@ -212,10 +197,11 @@
 
 <script setup>
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
 const userInitial = computed(() => {
@@ -230,6 +216,8 @@ const roleLabel = computed(() => {
   }
   return roles[authStore.user?.role] || 'Usuário'
 })
+
+const isActive = (path) => route.path.startsWith(path)
 
 const handleLogout = async () => {
   if (confirm('Tem certeza que deseja sair?')) {

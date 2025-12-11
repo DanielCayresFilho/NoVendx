@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { LinesService } from '../lines/lines.service';
+import { MediaService } from '../media/media.service';
 
 @Injectable()
 export class WebhooksService {
@@ -11,6 +12,7 @@ export class WebhooksService {
     private conversationsService: ConversationsService,
     private websocketGateway: WebsocketGateway,
     private linesService: LinesService,
+    private mediaService: MediaService,
   ) {}
 
   async handleEvolutionMessage(data: any) {
@@ -64,7 +66,23 @@ export class WebhooksService {
         console.log('💬 Texto:', messageText);
 
         const messageType = this.getMessageType(message.message);
-        const mediaUrl = this.getMediaUrl(message.message);
+        let mediaUrl = this.getMediaUrl(message.message);
+
+        // Se houver mídia, baixar da Evolution
+        if (mediaUrl && messageType !== 'text') {
+          try {
+            const fileName = `${Date.now()}-${from}-${messageType}.${this.getExtension(messageType)}`;
+            const localFileName = await this.mediaService.downloadMediaFromEvolution(mediaUrl, fileName);
+            
+            if (localFileName) {
+              mediaUrl = `/media/${localFileName}`;
+              console.log('📥 Mídia salva localmente:', mediaUrl);
+            }
+          } catch (error) {
+            console.error('❌ Erro ao baixar mídia:', error.message);
+            // Continuar mesmo com erro no download
+          }
+        }
 
         // Buscar a linha que recebeu a mensagem
         const instanceName = data.instance || data.instanceName;
@@ -165,5 +183,15 @@ export class WebhooksService {
     if (message?.audioMessage?.url) return message.audioMessage.url;
     if (message?.documentMessage?.url) return message.documentMessage.url;
     return undefined;
+  }
+
+  private getExtension(messageType: string): string {
+    const extensions = {
+      image: 'jpg',
+      video: 'mp4',
+      audio: 'ogg',
+      document: 'pdf',
+    };
+    return extensions[messageType] || 'bin';
   }
 }

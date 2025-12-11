@@ -10,29 +10,29 @@
     @delete="deleteContact"
   />
 
-  <div v-if="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-2xl p-6 w-full max-w-md">
+  <div v-if="showModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
+    <div class="modal-card p-6 w-full max-w-md">
       <h3 class="text-xl font-bold mb-4">{{ editingItem ? 'Editar' : 'Novo' }} Contato</h3>
       <form @submit.prevent="saveContact" class="space-y-4">
         <div>
           <label class="block text-sm font-medium mb-2">Nome</label>
-          <input v-model="form.name" type="text" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" />
+          <input v-model="form.name" type="text" required class="form-control w-full" />
         </div>
         <div>
           <label class="block text-sm font-medium mb-2">Telefone</label>
-          <input v-model="form.phone" type="text" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" placeholder="5511999999999" />
+          <input v-model="form.phone" type="text" required class="form-control w-full" placeholder="5511999999999" />
         </div>
         <div>
           <label class="block text-sm font-medium mb-2">CPF</label>
-          <input v-model="form.cpf" type="text" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" />
+          <input v-model="form.cpf" type="text" class="form-control w-full" />
         </div>
         <div>
           <label class="block text-sm font-medium mb-2">Contrato</label>
-          <input v-model="form.contract" type="text" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary" />
+          <input v-model="form.contract" type="text" class="form-control w-full" />
         </div>
         <div class="flex space-x-3">
-          <button type="button" @click="showModal = false" class="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50">Cancelar</button>
-          <button type="submit" class="flex-1 bg-primary text-white px-4 py-2 rounded-lg hover:bg-secondary">Salvar</button>
+          <button type="button" @click="showModal = false" class="flex-1 btn-secondary">Cancelar</button>
+          <button type="submit" class="flex-1 btn-primary text-center">Salvar</button>
         </div>
       </form>
     </div>

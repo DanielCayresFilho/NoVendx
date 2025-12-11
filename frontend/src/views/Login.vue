@@ -1,7 +1,7 @@
 <template>
-  <div class="min-h-screen bg-backgroundLight flex items-center justify-center px-4">
+  <div class="min-h-screen app-shell flex items-center justify-center px-4">
     <div class="max-w-md w-full">
-      <div class="bg-white p-8 rounded-2xl shadow-lg">
+      <div class="glass-panel card-soft p-8">
         <!-- Logo e título -->
         <div class="text-center mb-8">
           <div class="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-primary to-secondary rounded-xl flex items-center justify-center">
@@ -19,7 +19,7 @@
               v-model="email"
               type="email"
               required
-              class="w-full px-4 py-3 border border-borderColor rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              class="input-soft w-full px-4 py-3"
               placeholder="seu@email.com"
             />
           </div>
@@ -30,7 +30,7 @@
               v-model="password"
               type="password"
               required
-              class="w-full px-4 py-3 border border-borderColor rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              class="input-soft w-full px-4 py-3"
               placeholder="••••••••"
             />
           </div>
@@ -38,7 +38,7 @@
           <button
             type="submit"
             :disabled="loading"
-            class="w-full bg-primary text-white py-3 rounded-lg font-medium hover:bg-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            class="w-full btn-primary py-3 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {{ loading ? 'Entrando...' : 'Entrar' }}
           </button>
