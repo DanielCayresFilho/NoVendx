@@ -30,7 +30,16 @@ export class WebhooksService {
           return { status: 'ignored', reason: 'Message from self' };
         }
 
-        const from = message.key?.remoteJid?.replace('@s.whatsapp.net', '') || data.from;
+        // Número do contato (fallbacks para formatos diferentes de payload)
+        const from =
+          message.key?.remoteJid?.replace('@s.whatsapp.net', '') ||
+          (typeof data.from === 'string' ? data.from.replace('@s.whatsapp.net', '') : undefined) ||
+          (typeof data.sender === 'string' ? data.sender.replace('@s.whatsapp.net', '') : undefined);
+
+        if (!from) {
+          console.warn('Webhook sem número do remetente; ignorando.', { dataSnippet: data?.event || data?.data });
+          return { status: 'ignored', reason: 'Missing sender/remoteJid' };
+        }
         const messageText = message.message?.conversation
           || message.message?.extendedTextMessage?.text
           || message.message?.imageMessage?.caption
