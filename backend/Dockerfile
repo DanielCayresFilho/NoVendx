@@ -17,8 +17,8 @@ COPY src ./src/
 # Gerar Prisma Client
 RUN npx prisma generate
 
-# Build da aplicação
-RUN npm run build
+# Build da aplicação e compilar seed
+RUN npm run build && npx tsc -p tsconfig.seed.json
 
 # Verificar se o build foi criado
 RUN ls -la dist/ && test -f dist/main.js
