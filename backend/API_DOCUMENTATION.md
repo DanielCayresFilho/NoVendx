@@ -1,7 +1,8 @@
-# 📋 Documentação da API - Sistema NewVend
+# 📋 Documentação da API - VEND 2.0
 
 **Versão:** 1.0.0  
-**Data:** Dezembro 2024  
+**Data:** Dezembro 2025  
+**Desenvolvedor:** Daniel Clemente de Cayres Filho  
 **Tecnologia:** NestJS + Prisma + PostgreSQL
 
 ---

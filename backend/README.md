@@ -1,20 +1,21 @@
-# Vend Backend
+# VEND 2.0 - Backend
 
-Backend da plataforma Vend - Sistema de atendimento WhatsApp
+Backend da plataforma VEND 2.0 — atendimento WhatsApp, Evolution e WhatsApp Cloud API com gestão de templates, campanhas e relatórios.
 
 ## Tecnologias
-
 - NestJS
-- Prisma ORM
-- PostgreSQL
-- Redis
-- BullMQ
+- Prisma ORM (PostgreSQL)
+- Redis + Bull/BullMQ (filas)
 - WebSockets (Socket.IO)
 - Argon2 (hash de senhas)
 - JWT (autenticação)
 
-## Instalação
+## Pré-requisitos
+- Node.js 18+
+- Docker + Docker Compose
+- PostgreSQL e Redis (podem ser os do `docker-compose.yml`)
 
+## Instalação e execução
 ```bash
 # Instalar dependências
 npm install
@@ -33,69 +34,51 @@ npm run start:dev
 ```
 
 ## Configuração
+Copie `.env.example` para `.env` e ajuste:
+- `DATABASE_URL`
+- `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`
+- Credenciais Evolution (`EVOLUTION_*`)
+- Variáveis de WhatsApp Cloud API (token, business/number id nas linhas oficiais)
+- JWT e chaves de fila, se aplicável
 
-Copie o arquivo `.env.example` para `.env` e configure as variáveis de ambiente.
-
-## Estrutura
-
+## Estrutura (principais módulos)
 ```
 src/
-├── auth/              # Autenticação JWT
-├── users/             # Usuários
-├── segments/          # Segmentos
-├── tabulations/       # Tabulações
-├── contacts/          # Contatos
-├── campaigns/         # Campanhas
-├── blocklist/         # Lista de bloqueio
-├── lines/             # Linhas WhatsApp
-├── evolution/         # Configuração Evolution API
-├── conversations/     # Conversas
-├── websocket/         # Gateway WebSocket
-├── webhooks/          # Webhooks Evolution
-└── common/            # Guards, Decorators, etc
+├── auth/             # Autenticação JWT
+├── users/            # Usuários e roles
+├── segments/         # Segmentos
+├── tabulations/      # Tabulações
+├── contacts/         # Contatos
+├── campaigns/        # Campanhas (CSV, massivo, templates)
+├── templates/        # Templates WhatsApp Cloud API + histórico
+├── blocklist/        # Lista de bloqueio
+├── lines/            # Linhas WhatsApp / Evolution / Cloud
+├── evolution/        # Configuração Evolution API
+├── conversations/    # Conversas e tabulação
+├── media/            # Upload/serve de mídia
+├── reports/          # Relatórios
+├── api-messages/     # API externa (CPC, templates 1x1)
+├── api-logs/         # Logs de chamadas externas
+├── webhooks/         # Webhooks Evolution
+├── websocket/        # Gateway WebSocket
+└── common/           # Guards, decorators, utils
 ```
 
-## Endpoints Principais
+## Endpoints principais (resumo)
+- Auth: `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`
+- Users: CRUD + `GET /users/online-operators`
+- Segments, Tabulations, Contacts: CRUD
+- Lines: CRUD, QR Code, ban, evolutions/instances, available
+- Campaigns: criar, upload CSV, stats, suporte a templates
+- Templates: CRUD, sync Cloud API, send 1x1, send massivo, history, stats
+- API externa: `POST /api/messages/massivocpc`, `POST /api/messages/template`
+- Reports: múltiplos relatórios + consolidado
+- Media: upload/download
+- Webhooks: `POST /webhooks/evolution`
+- WebSockets: `send-message`, `new-message`, `active-conversations`, `conversation-tabulated`
 
-### Auth
-- `POST /auth/login` - Login
-- `POST /auth/logout` - Logout
-- `GET /auth/me` - Usuário atual
-
-### Users
-- `GET /users` - Listar usuários
-- `POST /users` - Criar usuário
-- `GET /users/:id` - Buscar usuário
-- `PATCH /users/:id` - Atualizar usuário
-- `DELETE /users/:id` - Deletar usuário
-
-### Conversations
-- `GET /conversations/active` - Conversas ativas
-- `GET /conversations/contact/:phone` - Conversas por telefone
-- `POST /conversations/tabulate/:phone` - Tabular conversa
-
-### Campaigns
-- `POST /campaigns` - Criar campanha
-- `POST /campaigns/:id/upload` - Upload CSV
-- `GET /campaigns/stats/:name` - Estatísticas
-
-### Lines
-- `POST /lines` - Criar linha
-- `GET /lines/:id/qrcode` - Obter QR Code
-- `POST /lines/:id/ban` - Marcar como banida
-
-## WebSockets
-
-Eventos:
-- `send-message` - Enviar mensagem
-- `new-message` - Nova mensagem recebida
-- `active-conversations` - Conversas ativas
-- `conversation-tabulated` - Conversa tabulada
-
-## Webhooks
-
-- `POST /webhooks/evolution` - Webhook Evolution API
+## Documentação completa
+Consulte `API_DOCUMENTATION.md` (formatado para exportar em PDF).
 
 ## Licença
-
-Proprietário
+Proprietário.
