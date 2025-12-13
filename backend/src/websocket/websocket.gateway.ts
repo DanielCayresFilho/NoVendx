@@ -89,9 +89,13 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { contactPhone: string; message: string; messageType?: string; mediaUrl?: string },
   ) {
+    console.log(`📤 [WebSocket] Recebido send-message:`, JSON.stringify(data, null, 2));
+    
     const user = client.data.user;
+    console.log(`👤 [WebSocket] Usuário: ${user?.name}, role: ${user?.role}, line: ${user?.line}`);
 
     if (!user || !user.line) {
+      console.error('❌ [WebSocket] Usuário não autenticado ou sem linha');
       return { error: 'Usuário não autenticado ou sem linha atribuída' };
     }
 
@@ -167,16 +171,19 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         mediaUrl: data.mediaUrl,
       });
 
+      console.log(`✅ [WebSocket] Mensagem salva no banco, ID: ${conversation.id}`);
+      
       // Emitir mensagem para o usuário
       client.emit('message-sent', conversation);
+      console.log(`📤 [WebSocket] Emitido message-sent para o cliente`);
 
       // Se houver supervisores online do mesmo segmento, enviar para eles também
       this.emitToSupervisors(user.segment, 'new-message', conversation);
 
       return { success: true, conversation };
     } catch (error) {
-      console.error('Erro ao enviar mensagem:', error);
-      return { error: 'Erro ao enviar mensagem' };
+      console.error('❌ [WebSocket] Erro ao enviar mensagem:', error.response?.data || error.message);
+      return { error: `Erro ao enviar mensagem: ${error.message}` };
     }
   }
 

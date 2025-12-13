@@ -17,6 +17,7 @@ export class ConversationsController {
   @Post()
   @Roles(Role.admin, Role.supervisor, Role.operator)
   create(@Body() createConversationDto: CreateConversationDto) {
+    console.log('📝 [POST /conversations] Criando conversa:', JSON.stringify(createConversationDto, null, 2));
     return this.conversationsService.create(createConversationDto);
   }
 
@@ -29,6 +30,8 @@ export class ConversationsController {
   @Get('active')
   @Roles(Role.admin, Role.supervisor, Role.operator)
   getActiveConversations(@CurrentUser() user: any) {
+    console.log(`📋 [GET /conversations/active] Usuário: ${user.name} (${user.role}), line: ${user.line}, segment: ${user.segment}`);
+    
     // Admin e Supervisor podem ver todas as conversas ativas
     // Operator só vê as conversas da sua linha
     if (user.role === 'admin') {

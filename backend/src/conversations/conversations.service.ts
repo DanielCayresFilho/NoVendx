@@ -61,23 +61,15 @@ export class ConversationsService {
       where.userLine = userLine;
     }
 
-    // Agrupar por contactPhone para pegar apenas a última mensagem de cada conversa
+    // Retornar TODAS as mensagens não tabuladas (o frontend vai agrupar)
     const conversations = await this.prisma.conversation.findMany({
       where,
       orderBy: {
-        datetime: 'desc',
+        datetime: 'asc', // Ordem cronológica para histórico
       },
     });
 
-    // Agrupar por contactPhone
-    const grouped = conversations.reduce((acc, conv) => {
-      if (!acc[conv.contactPhone]) {
-        acc[conv.contactPhone] = conv;
-      }
-      return acc;
-    }, {});
-
-    return Object.values(grouped);
+    return conversations;
   }
 
   async findOne(id: number) {

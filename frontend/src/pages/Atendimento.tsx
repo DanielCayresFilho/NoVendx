@@ -24,11 +24,12 @@ import {
 import { Label } from "@/components/ui/label";
 import { useNotificationSound } from "@/hooks/useNotificationSound";
 import { toast } from "@/hooks/use-toast";
-import { conversationsService, tabulationsService, Conversation as APIConversation, Tabulation } from "@/services/api";
+import { conversationsService, tabulationsService, contactsService, Conversation as APIConversation, Tabulation } from "@/services/api";
 import { useRealtimeConnection, useRealtimeSubscription } from "@/hooks/useRealtimeConnection";
-import { WS_EVENTS } from "@/services/websocket";
+import { WS_EVENTS, realtimeSocket } from "@/services/websocket";
 import { format } from "date-fns";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface ConversationGroup {
   contactPhone: string;
@@ -41,6 +42,7 @@ interface ConversationGroup {
 }
 
 export default function Atendimento() {
+  const { user } = useAuth();
   const [selectedConversation, setSelectedConversation] = useState<ConversationGroup | null>(null);
   const [message, setMessage] = useState("");
   const [isNewConversationOpen, setIsNewConversationOpen] = useState(false);
@@ -131,6 +133,64 @@ export default function Atendimento() {
       loadConversations();
     }
   }, []);
+
+  // Subscribe to message sent confirmation
+  useRealtimeSubscription('message-sent', (data: any) => {
+    console.log('[Atendimento] Message sent confirmation:', data);
+    if (data) {
+      // Adicionar mensagem à conversa ativa
+      const newMsg = data as APIConversation;
+      
+      setConversations(prev => {
+        const existing = prev.find(c => c.contactPhone === newMsg.contactPhone);
+        
+        if (existing) {
+          return prev.map(conv => {
+            if (conv.contactPhone === newMsg.contactPhone) {
+              return {
+                ...conv,
+                messages: [...conv.messages, newMsg].sort((a, b) => 
+                  new Date(a.datetime).getTime() - new Date(b.datetime).getTime()
+                ),
+                lastMessage: newMsg.message,
+                lastMessageTime: newMsg.datetime,
+                isFromContact: false,
+              };
+            }
+            return conv;
+          }).sort((a, b) => 
+            new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
+          );
+        } else {
+          // Nova conversa criada
+          const newGroup: ConversationGroup = {
+            contactPhone: newMsg.contactPhone,
+            contactName: newMsg.contactName,
+            lastMessage: newMsg.message,
+            lastMessageTime: newMsg.datetime,
+            isFromContact: false,
+            messages: [newMsg],
+          };
+          return [newGroup, ...prev];
+        }
+      });
+
+      // Atualizar conversa selecionada se for a mesma
+      if (selectedConversation?.contactPhone === newMsg.contactPhone) {
+        setSelectedConversation(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            messages: [...prev.messages, newMsg].sort((a, b) => 
+              new Date(a.datetime).getTime() - new Date(b.datetime).getTime()
+            ),
+            lastMessage: newMsg.message,
+            lastMessageTime: newMsg.datetime,
+          };
+        });
+      }
+    }
+  }, [selectedConversation]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -230,25 +290,50 @@ export default function Atendimento() {
     if (!message.trim() || !selectedConversation || isSending) return;
 
     setIsSending(true);
-    try {
-      await conversationsService.create({
-        contactName: selectedConversation.contactName,
-        contactPhone: selectedConversation.contactPhone,
-        message: message.trim(),
-        sender: 'operator',
-        messageType: 'text',
-      });
+    const messageText = message.trim();
+    setMessage(""); // Limpar input imediatamente para UX
 
-      setMessage("");
-      playSuccessSound();
-      toast({
-        title: "Mensagem enviada",
-        description: "Sua mensagem foi enviada com sucesso",
-      });
-      
-      // Reload conversations to get the new message
-      await loadConversations();
+    try {
+      // Usar WebSocket para enviar mensagem via WhatsApp (se conectado)
+      if (isRealtimeConnected) {
+        console.log('[Atendimento] Enviando mensagem via WebSocket...');
+        realtimeSocket.send('send-message', {
+          contactPhone: selectedConversation.contactPhone,
+          message: messageText,
+          messageType: 'text',
+        });
+        
+        // A resposta virá via evento 'message-sent' ou 'new-message'
+        playSuccessSound();
+        toast({
+          title: "Mensagem enviada",
+          description: "Sua mensagem foi enviada com sucesso",
+        });
+      } else {
+        // Fallback: Usar REST API (apenas salva no banco, não envia via WhatsApp)
+        console.log('[Atendimento] WebSocket não conectado, salvando via REST...');
+        await conversationsService.create({
+          contactName: selectedConversation.contactName,
+          contactPhone: selectedConversation.contactPhone,
+          message: messageText,
+          sender: 'operator',
+          messageType: 'text',
+          userName: user?.name,
+          userLine: user?.lineId,
+          segment: user?.segmentId,
+        });
+
+        playSuccessSound();
+        toast({
+          title: "Mensagem salva",
+          description: "Mensagem salva (WebSocket desconectado)",
+          variant: "default",
+        });
+        
+        await loadConversations();
+      }
     } catch (error) {
+      setMessage(messageText); // Restaurar mensagem se falhou
       playErrorSound();
       toast({
         title: "Erro ao enviar",
@@ -258,7 +343,7 @@ export default function Atendimento() {
     } finally {
       setIsSending(false);
     }
-  }, [message, selectedConversation, isSending, playSuccessSound, playErrorSound, loadConversations]);
+  }, [message, selectedConversation, isSending, user, isRealtimeConnected, playSuccessSound, playErrorSound, loadConversations]);
 
   const handleTabulate = useCallback(async (tabulationId: number) => {
     if (!selectedConversation) return;
@@ -294,26 +379,69 @@ export default function Atendimento() {
       return;
     }
 
-    try {
-      await conversationsService.create({
-        contactName: newContactName.trim(),
-        contactPhone: newContactPhone.trim(),
-        message: `Nova conversa iniciada`,
-        sender: 'operator',
-        messageType: 'text',
-      });
-
-      playSuccessSound();
+    if (!user?.lineId) {
       toast({
-        title: "Conversa iniciada",
-        description: "Nova conversa criada com sucesso",
+        title: "Linha não atribuída",
+        description: "Você precisa ter uma linha atribuída para iniciar conversas",
+        variant: "destructive",
       });
+      return;
+    }
+
+    try {
+      // Primeiro, criar ou atualizar o contato
+      try {
+        await contactsService.create({
+          name: newContactName.trim(),
+          phone: newContactPhone.trim(),
+          cpf: newContactCpf.trim() || undefined,
+          segment: user.segmentId,
+        });
+      } catch {
+        // Contato pode já existir, ignorar erro
+      }
+
+      // Usar WebSocket para enviar primeira mensagem via WhatsApp
+      if (isRealtimeConnected) {
+        console.log('[Atendimento] Criando nova conversa via WebSocket...');
+        realtimeSocket.send('send-message', {
+          contactPhone: newContactPhone.trim(),
+          message: `Olá ${newContactName.trim()}, tudo bem?`,
+          messageType: 'text',
+        });
+
+        playSuccessSound();
+        toast({
+          title: "Conversa iniciada",
+          description: "Mensagem enviada via WhatsApp",
+        });
+      } else {
+        // Fallback: Apenas salvar no banco
+        await conversationsService.create({
+          contactName: newContactName.trim(),
+          contactPhone: newContactPhone.trim(),
+          message: `Olá ${newContactName.trim()}, tudo bem?`,
+          sender: 'operator',
+          messageType: 'text',
+          userName: user.name,
+          userLine: user.lineId,
+          segment: user.segmentId,
+        });
+
+        playSuccessSound();
+        toast({
+          title: "Conversa salva",
+          description: "Salvo no sistema (WhatsApp não enviado - offline)",
+          variant: "default",
+        });
+        
+        await loadConversations();
+      }
       
       setIsNewConversationOpen(false);
       setNewContactName("");
       setNewContactPhone("");
       setNewContactCpf("");
-      await loadConversations();
     } catch (error) {
       playErrorSound();
       toast({
@@ -322,7 +450,7 @@ export default function Atendimento() {
         variant: "destructive",
       });
     }
-  }, [newContactName, newContactPhone, playSuccessSound, playErrorSound, loadConversations]);
+  }, [newContactName, newContactPhone, newContactCpf, user, isRealtimeConnected, playSuccessSound, playErrorSound, loadConversations]);
 
   const formatTime = (datetime: string) => {
     try {
