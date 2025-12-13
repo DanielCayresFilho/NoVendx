@@ -17,6 +17,7 @@ export class CampaignsController {
   @Post()
   @Roles(Role.admin, Role.supervisor)
   create(@Body() createCampaignDto: CreateCampaignDto) {
+    console.log('📋 [Campaigns] Criando campanha:', JSON.stringify(createCampaignDto, null, 2));
     return this.campaignsService.create(createCampaignDto);
   }
 
@@ -30,17 +31,24 @@ export class CampaignsController {
     @Body('useTemplate') useTemplate?: string,
     @Body('templateId') templateId?: string,
   ) {
+    console.log(`📤 [Campaigns] Upload CSV recebido para campanha ${id}`);
+    console.log(`📄 [Campaigns] Arquivo:`, file ? { name: file.originalname, size: file.size, mimetype: file.mimetype } : 'NENHUM');
+    console.log(`📝 [Campaigns] Mensagem: ${message || 'Nenhuma'}`);
+    
     if (!file) {
+      console.error('❌ [Campaigns] Arquivo CSV não recebido');
       throw new BadRequestException('Arquivo CSV é obrigatório');
     }
 
     const contacts = [];
     const stream = Readable.from(file.buffer.toString());
+    console.log(`📊 [Campaigns] Processando CSV...`);
 
     return new Promise((resolve, reject) => {
       stream
         .pipe(csv())
         .on('data', (row) => {
+          console.log('📝 [Campaigns] Row do CSV:', row);
           if (row.name && row.phone) {
             contacts.push({
               name: row.name,
@@ -50,6 +58,7 @@ export class CampaignsController {
           }
         })
         .on('end', async () => {
+          console.log(`✅ [Campaigns] CSV processado: ${contacts.length} contatos encontrados`);
           try {
             const result = await this.campaignsService.uploadCampaign(
               +id,
@@ -58,12 +67,15 @@ export class CampaignsController {
               useTemplate === 'true',
               templateId ? parseInt(templateId) : undefined,
             );
+            console.log('✅ [Campaigns] Upload concluído:', result);
             resolve(result);
           } catch (error) {
+            console.error('❌ [Campaigns] Erro no upload:', error.message);
             reject(error);
           }
         })
         .on('error', (error) => {
+          console.error('❌ [Campaigns] Erro ao processar CSV:', error.message);
           reject(error);
         });
     });

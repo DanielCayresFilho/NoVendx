@@ -4,7 +4,8 @@ import { getAuthToken } from '@/services/api';
 import { useToast } from '@/components/ui/use-toast';
 
 export function useRealtimeConnection() {
-  const [isConnected, setIsConnected] = useState(false);
+  // Inicializar com o estado atual do socket
+  const [isConnected, setIsConnected] = useState(() => realtimeSocket.isConnected);
   const [isConnecting, setIsConnecting] = useState(false);
   const { toast } = useToast();
 
@@ -15,11 +16,22 @@ export function useRealtimeConnection() {
       return;
     }
 
+    // Se já está conectado, apenas atualizar o estado
+    if (realtimeSocket.isConnected) {
+      console.log('[Realtime] Already connected');
+      setIsConnected(true);
+      return;
+    }
+
     setIsConnecting(true);
     try {
       await realtimeSocket.connect(token);
+      // Atualizar estado após conexão bem-sucedida
+      setIsConnected(true);
+      console.log('[Realtime] Connected successfully');
     } catch (error) {
       console.error('[Realtime] Connection failed:', error);
+      setIsConnected(false);
       toast({
         title: 'Conexão em tempo real',
         description: 'Não foi possível conectar. Tentando novamente...',
@@ -31,23 +43,44 @@ export function useRealtimeConnection() {
   }, [toast]);
 
   useEffect(() => {
+    // Registrar handlers ANTES de conectar
     const unsubConnect = realtimeSocket.onConnect(() => {
       setIsConnected(true);
-      console.log('[Realtime] Connection established');
+      console.log('[Realtime] Connection established (handler)');
     });
 
     const unsubDisconnect = realtimeSocket.onDisconnect(() => {
       setIsConnected(false);
-      console.log('[Realtime] Connection lost');
+      console.log('[Realtime] Connection lost (handler)');
     });
 
-    connect();
+    // Verificar estado atual primeiro
+    if (realtimeSocket.isConnected) {
+      setIsConnected(true);
+    } else {
+      connect();
+    }
 
     return () => {
       unsubConnect();
       unsubDisconnect();
     };
   }, [connect]);
+
+  // Sincronizar periodicamente com o estado real do socket
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const currentState = realtimeSocket.isConnected;
+      setIsConnected(prev => {
+        if (prev !== currentState) {
+          console.log(`[Realtime] State sync: ${prev} -> ${currentState}`);
+        }
+        return currentState;
+      });
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   return { isConnected, isConnecting };
 }

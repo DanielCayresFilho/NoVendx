@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { MessageCircle, ArrowRight, ArrowLeft, AlertTriangle, Loader2 } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { MainLayout } from "@/components/layout/MainLayout";
@@ -41,9 +41,22 @@ export default function Supervisionar() {
     }
   }, []);
 
+  // Ref para evitar loop infinito
+  const selectedPhoneRef = useRef<string | null>(null);
+  const isFirstLoad = useRef(true);
+
+  // Atualizar ref quando selectedConversation mudar
+  useEffect(() => {
+    selectedPhoneRef.current = selectedConversation?.contactPhone || null;
+  }, [selectedConversation?.contactPhone]);
+
   const loadConversations = useCallback(async () => {
     try {
-      setIsLoading(true);
+      // Só mostrar loading na primeira vez
+      if (isFirstLoad.current) {
+        setIsLoading(true);
+      }
+      
       const data = await conversationsService.getActive();
       
       // Group conversations by contact phone
@@ -87,9 +100,10 @@ export default function Supervisionar() {
 
       setConversations(groups);
       
-      // Update selected conversation if it exists
-      if (selectedConversation) {
-        const updated = groups.find(g => g.contactPhone === selectedConversation.contactPhone);
+      // Update selected conversation if it exists (usando ref)
+      const currentSelectedPhone = selectedPhoneRef.current;
+      if (currentSelectedPhone) {
+        const updated = groups.find(g => g.contactPhone === currentSelectedPhone);
         if (updated) {
           setSelectedConversation(updated);
         }
@@ -102,19 +116,20 @@ export default function Supervisionar() {
       });
     } finally {
       setIsLoading(false);
+      isFirstLoad.current = false;
     }
-  }, [selectedConversation]);
+  }, []); // Sem dependências - usa ref
 
   useEffect(() => {
     loadOperators();
     loadConversations();
   }, [loadOperators, loadConversations]);
 
-  // Poll for new messages
+  // Poll for new messages - intervalo maior para não sobrecarregar
   useEffect(() => {
     const interval = setInterval(() => {
       loadConversations();
-    }, 5000);
+    }, 10000); // 10 segundos
 
     return () => clearInterval(interval);
   }, [loadConversations]);

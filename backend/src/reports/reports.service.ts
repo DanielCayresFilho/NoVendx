@@ -1046,6 +1046,8 @@ export class ReportsService {
    * Segmento, Carteira, Protocolo
    */
   async getResumoAtendimentosReport(filters: ReportFilterDto) {
+    console.log('📊 [Reports] Gerando Resumo Atendimentos com filtros:', JSON.stringify(filters));
+    
     const whereClause: any = {};
 
     if (filters.segment) {
@@ -1055,17 +1057,23 @@ export class ReportsService {
     if (filters.startDate || filters.endDate) {
       whereClause.datetime = {};
       if (filters.startDate) {
-        whereClause.datetime.gte = new Date(filters.startDate);
+        // Adicionar hora 00:00:00 para incluir todo o dia
+        whereClause.datetime.gte = new Date(`${filters.startDate}T00:00:00.000Z`);
       }
       if (filters.endDate) {
-        whereClause.datetime.lte = new Date(filters.endDate);
+        // Adicionar hora 23:59:59 para incluir todo o dia
+        whereClause.datetime.lte = new Date(`${filters.endDate}T23:59:59.999Z`);
       }
     }
+
+    console.log('📊 [Reports] Where clause:', JSON.stringify(whereClause));
 
     const conversations = await this.prisma.conversation.findMany({
       where: whereClause,
       orderBy: { datetime: 'asc' },
     });
+
+    console.log(`📊 [Reports] Encontradas ${conversations.length} conversas`);
 
     const segments = await this.prisma.segment.findMany();
     const segmentMap = new Map(segments.map(s => [s.id, s]));

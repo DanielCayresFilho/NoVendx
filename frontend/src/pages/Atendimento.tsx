@@ -107,8 +107,8 @@ export default function Atendimento() {
         }
       });
 
-      // Update selected conversation if it's the same contact
-      if (selectedConversation?.contactPhone === newMsg.contactPhone) {
+      // Update selected conversation if it's the same contact (usando ref)
+      if (selectedPhoneRef.current === newMsg.contactPhone) {
         setSelectedConversation(prev => {
           if (!prev) return null;
           return {
@@ -123,7 +123,7 @@ export default function Atendimento() {
         });
       }
     }
-  }, [selectedConversation, playMessageSound]);
+  }, [playMessageSound]); // Removido selectedConversation da dependência
 
   // Subscribe to new conversations
   useRealtimeSubscription(WS_EVENTS.NEW_CONVERSATION, (data: any) => {
@@ -175,8 +175,8 @@ export default function Atendimento() {
         }
       });
 
-      // Atualizar conversa selecionada se for a mesma
-      if (selectedConversation?.contactPhone === newMsg.contactPhone) {
+      // Atualizar conversa selecionada se for a mesma (usando ref)
+      if (selectedPhoneRef.current === newMsg.contactPhone) {
         setSelectedConversation(prev => {
           if (!prev) return null;
           return {
@@ -190,11 +190,19 @@ export default function Atendimento() {
         });
       }
     }
-  }, [selectedConversation]);
+  }, []); // Sem dependências - usa ref
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
+
+  // Ref para armazenar o contactPhone selecionado (evita loop infinito)
+  const selectedPhoneRef = useRef<string | null>(null);
+
+  // Atualizar ref quando selectedConversation mudar
+  useEffect(() => {
+    selectedPhoneRef.current = selectedConversation?.contactPhone || null;
+  }, [selectedConversation?.contactPhone]);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -239,9 +247,10 @@ export default function Atendimento() {
 
       setConversations(groups);
       
-      // Update selected conversation if it exists
-      if (selectedConversation) {
-        const updated = groups.find(g => g.contactPhone === selectedConversation.contactPhone);
+      // Update selected conversation if it exists (usando ref para evitar loop)
+      const currentSelectedPhone = selectedPhoneRef.current;
+      if (currentSelectedPhone) {
+        const updated = groups.find(g => g.contactPhone === currentSelectedPhone);
         if (updated) {
           setSelectedConversation(updated);
         }
@@ -251,7 +260,7 @@ export default function Atendimento() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedConversation]);
+  }, []); // Sem dependências - usa ref em vez de state
 
   const loadTabulations = useCallback(async () => {
     try {

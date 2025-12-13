@@ -755,23 +755,86 @@ export interface ReportParams {
   type: string;
 }
 
+// Mapeamento de tipos de relatório para endpoints
+const reportEndpoints: Record<string, string> = {
+  'op_sintetico': 'op-sintetico',
+  'kpi': 'kpi',
+  'hsm': 'hsm',
+  'status_linha': 'line-status',
+  'envios': 'envios',
+  'indicadores': 'indicadores',
+  'tempos': 'tempos',
+  'templates': 'templates',
+  'completo_csv': 'completo-csv',
+  'equipe': 'equipe',
+  'dados_transacionados': 'dados-transacionados',
+  'detalhado_conversas': 'detalhado-conversas',
+  'linhas': 'linhas',
+  'resumo_atendimentos': 'resumo-atendimentos',
+  'hiper_personalizado': 'hiper-personalizado',
+  'consolidado': 'consolidado',
+};
+
+// Helper para converter array de objetos em CSV
+const arrayToCSV = (data: any[]): string => {
+  if (!data || data.length === 0) {
+    return '';
+  }
+  
+  const headers = Object.keys(data[0]);
+  const csvRows = [
+    headers.join(','),
+    ...data.map(row => 
+      headers.map(header => {
+        const value = row[header];
+        // Escapar valores com vírgulas ou aspas
+        if (value === null || value === undefined) return '';
+        const strValue = String(value);
+        if (strValue.includes(',') || strValue.includes('"') || strValue.includes('\n')) {
+          return `"${strValue.replace(/"/g, '""')}"`;
+        }
+        return strValue;
+      }).join(',')
+    ),
+  ];
+  
+  return csvRows.join('\n');
+};
+
 export const reportsService = {
   generate: async (params: ReportParams): Promise<Blob> => {
+    const endpoint = reportEndpoints[params.type];
+    if (!endpoint) {
+      throw new Error(`Tipo de relatório não suportado: ${params.type}`);
+    }
+
+    // Construir query string
+    const queryParams = new URLSearchParams();
+    if (params.startDate) queryParams.append('startDate', params.startDate);
+    if (params.endDate) queryParams.append('endDate', params.endDate);
+    if (params.segment) queryParams.append('segment', params.segment.toString());
+
+    const url = `${API_BASE_URL}/reports/${endpoint}?${queryParams.toString()}`;
+    
     const token = getAuthToken();
-    const response = await fetch(`${API_BASE_URL}/reports/generate`, {
-      method: 'POST',
+    const response = await fetch(url, {
+      method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify(params),
     });
 
     if (!response.ok) {
-      throw new Error('Erro ao gerar relatório');
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || 'Erro ao gerar relatório');
     }
 
-    return response.blob();
+    // Backend retorna JSON, precisamos converter para CSV
+    const data = await response.json();
+    const csvContent = arrayToCSV(Array.isArray(data) ? data : [data]);
+    
+    return new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   },
 };
 

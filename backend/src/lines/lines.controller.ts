@@ -20,7 +20,7 @@ export class LinesController {
   }
 
   @Get()
-  @Roles(Role.admin)
+  @Roles(Role.admin, Role.supervisor)
   findAll(@Query() filters: any) {
     return this.linesService.findAll(filters);
   }

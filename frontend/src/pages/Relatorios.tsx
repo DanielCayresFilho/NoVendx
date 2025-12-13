@@ -34,12 +34,19 @@ const reportTypes = [
   { value: "consolidado", label: "Consolidado" },
 ];
 
+// Helper para formatar data como YYYY-MM-DD
+const formatDateForInput = (date: Date): string => {
+  return date.toISOString().split('T')[0];
+};
+
 export default function Relatorios() {
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  // Definir datas padrão como hoje
+  const today = formatDateForInput(new Date());
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
   const [segment, setSegment] = useState("");
   const [segments, setSegments] = useState<Segment[]>([]);
-  const [reportType, setReportType] = useState("");
+  const [reportType, setReportType] = useState("resumo_atendimentos"); // Tipo padrão
   const [isLoading, setIsLoading] = useState(false);
   const [reportGenerated, setReportGenerated] = useState(false);
   const [reportBlob, setReportBlob] = useState<Blob | null>(null);
