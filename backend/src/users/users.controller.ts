@@ -44,6 +44,8 @@ export class UsersController {
       line: typeof updateUserDto.line,
       segment: typeof updateUserDto.segment,
       password: typeof updateUserDto.password,
+      oneToOneActive: typeof updateUserDto.oneToOneActive,
+      oneToOneActiveValue: updateUserDto.oneToOneActive,
     });
     
     try {

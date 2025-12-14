@@ -105,6 +105,15 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     if (data.isNewConversation) {
       const fullUser = await this.prisma.user.findUnique({
         where: { id: user.id },
+        select: {
+          id: true,
+          oneToOneActive: true,
+        },
+      });
+
+      console.log(`🔍 [WebSocket] Verificando permissão 1x1 para usuário ${user.id}:`, {
+        oneToOneActive: fullUser?.oneToOneActive,
+        hasPermission: fullUser?.oneToOneActive === true,
       });
 
       if (!fullUser?.oneToOneActive) {

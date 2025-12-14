@@ -52,6 +52,7 @@ export class UsersService {
         segment: true,
         line: true,
         status: true,
+        oneToOneActive: true,
         createdAt: true,
         updatedAt: true,
         // Não retornar password
@@ -96,6 +97,15 @@ export class UsersService {
       cleanData.line = null;
     }
 
+    // Garantir que oneToOneActive seja boolean (não undefined se não foi enviado)
+    if (cleanData.oneToOneActive === undefined) {
+      // Se não foi enviado, não alterar (manter valor atual)
+      delete cleanData.oneToOneActive;
+    } else {
+      // Garantir que seja boolean
+      cleanData.oneToOneActive = Boolean(cleanData.oneToOneActive);
+    }
+
     console.log('💾 Dados limpos para atualizar:', cleanData);
 
     return this.prisma.user.update({
@@ -109,6 +119,7 @@ export class UsersService {
         segment: true,
         line: true,
         status: true,
+        oneToOneActive: true,
         createdAt: true,
         updatedAt: true,
         // Não retornar password
