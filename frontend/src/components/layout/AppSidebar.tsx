@@ -72,8 +72,8 @@ export function AppSidebar() {
     <>
       <aside className="w-64 min-h-screen bg-sidebar flex flex-col">
         {/* Logo */}
-        <div className="p-6 border-b border-sidebar-border">
-          <VendLogo />
+        <div className="p-6 border-b border-sidebar-border flex justify-center">
+          <VendLogo size="xl" showText={false} />
         </div>
 
         {/* Navigation */}

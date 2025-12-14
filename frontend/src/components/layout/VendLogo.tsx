@@ -1,38 +1,46 @@
 import { cn } from "@/lib/utils";
 
 interface VendLogoProps {
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
   showSubtitle?: boolean;
+  showText?: boolean;
   className?: string;
 }
 
-export function VendLogo({ size = 'md', showSubtitle = true, className }: VendLogoProps) {
+export function VendLogo({ size = 'md', showSubtitle = true, showText = true, className }: VendLogoProps) {
   const sizes = {
-    sm: { box: 'w-8 h-8', text: 'text-lg', letter: 'text-xl', subtitle: 'text-xs' },
-    md: { box: 'w-10 h-10', text: 'text-xl', letter: 'text-2xl', subtitle: 'text-xs' },
-    lg: { box: 'w-16 h-16', text: 'text-3xl', letter: 'text-4xl', subtitle: 'text-sm' }
+    sm: { box: 'w-10 h-10', text: 'text-lg', subtitle: 'text-xs' },
+    md: { box: 'w-12 h-12', text: 'text-xl', subtitle: 'text-xs' },
+    lg: { box: 'w-20 h-20', text: 'text-3xl', subtitle: 'text-sm' },
+    xl: { box: 'w-32 h-32', text: 'text-3xl', subtitle: 'text-sm' }
   };
 
   const s = sizes[size];
 
   return (
-    <div className={cn("flex items-center gap-3", className)}>
+    <div className={cn("flex items-center", showText ? "gap-3" : "", className)}>
       <div className={cn(
         s.box,
-        "rounded-lg bg-gradient-to-br from-primary to-cyan flex items-center justify-center shadow-lg"
+        "flex items-center justify-center"
       )}>
-        <span className={cn(s.letter, "font-bold text-primary-foreground")}>V</span>
+        <img 
+          src="/vendLogo.png" 
+          alt="Vend Logo" 
+          className="w-full h-full object-contain"
+        />
       </div>
-      <div className="flex flex-col">
-        <span className={cn(s.text, "font-bold text-sidebar-foreground tracking-tight")}>
-          vend
-        </span>
-        {showSubtitle && (
-          <span className={cn(s.subtitle, "text-muted-foreground")}>
-            SaaS de Atendimento
+      {showText && (
+        <div className="flex flex-col">
+          <span className={cn(s.text, "font-bold text-sidebar-foreground tracking-tight")}>
+            vend
           </span>
-        )}
-      </div>
+          {showSubtitle && (
+            <span className={cn(s.subtitle, "text-muted-foreground")}>
+              SaaS de Atendimento
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

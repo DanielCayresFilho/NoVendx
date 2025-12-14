@@ -39,8 +39,12 @@ export default function Login() {
 
       <GlassCard className="w-full max-w-md animate-scale-in relative z-10" padding="lg">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary to-cyan flex items-center justify-center shadow-xl mb-6">
-            <span className="text-5xl font-bold text-primary-foreground">V</span>
+          <div className="w-40 h-40 flex items-center justify-center mb-6">
+            <img 
+              src="/vendLogo.png" 
+              alt="Vend Logo" 
+              className="w-full h-full object-contain"
+            />
           </div>
           <h1 className="text-2xl font-bold text-foreground">Bem-vindo ao Vend</h1>
           <p className="text-muted-foreground mt-1">Sistema de Atendimento</p>

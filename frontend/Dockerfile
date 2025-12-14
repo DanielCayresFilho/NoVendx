@@ -25,8 +25,15 @@ RUN apk add --no-cache wget
 # Copiar arquivos buildados do stage anterior
 COPY --from=builder /app/dist /usr/share/nginx/html
 
+# Verificar se os arquivos foram copiados corretamente
+RUN ls -la /usr/share/nginx/html/ && \
+    test -f /usr/share/nginx/html/index.html || (echo "ERROR: index.html not found!" && exit 1)
+
 # Copiar configuração customizada do nginx para SPA (Single Page Application)
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Testar configuração do nginx
+RUN nginx -t
 
 # Expor porta 80
 EXPOSE 80
