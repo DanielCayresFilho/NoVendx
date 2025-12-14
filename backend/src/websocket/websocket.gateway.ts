@@ -98,6 +98,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
     if (!user || !user.line) {
       console.error('❌ [WebSocket] Usuário não autenticado ou sem linha');
+      client.emit('message-error', { error: 'Usuário não autenticado ou sem linha atribuída' });
       return { error: 'Usuário não autenticado ou sem linha atribuída' };
     }
 
@@ -118,6 +119,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
       if (!fullUser?.oneToOneActive) {
         console.error('❌ [WebSocket] Operador sem permissão para 1x1');
+        client.emit('message-error', { error: 'Você não tem permissão para iniciar conversas 1x1' });
         return { error: 'Você não tem permissão para iniciar conversas 1x1' };
       }
     }
@@ -127,6 +129,10 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       const cpcCheck = await this.controlPanelService.canContactCPC(data.contactPhone, user.segment);
       if (!cpcCheck.allowed) {
         console.warn('⚠️ [WebSocket] Bloqueio CPC:', cpcCheck.reason);
+        client.emit('message-error', { 
+          error: cpcCheck.reason,
+          hoursRemaining: cpcCheck.hoursRemaining,
+        });
         return { error: cpcCheck.reason };
       }
 
@@ -138,6 +144,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       );
       if (!repescagemCheck.allowed) {
         console.warn('⚠️ [WebSocket] Bloqueio Repescagem:', repescagemCheck.reason);
+        client.emit('message-error', { error: repescagemCheck.reason });
         return { error: repescagemCheck.reason };
       }
 
@@ -147,6 +154,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       });
 
       if (!line || line.lineStatus !== 'active') {
+        client.emit('message-error', { error: 'Linha não disponível' });
         return { error: 'Linha não disponível' };
       }
 
@@ -231,7 +239,9 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       return { success: true, conversation };
     } catch (error) {
       console.error('❌ [WebSocket] Erro ao enviar mensagem:', error.response?.data || error.message);
-      return { error: `Erro ao enviar mensagem: ${error.message}` };
+      const errorMessage = `Erro ao enviar mensagem: ${error.message}`;
+      client.emit('message-error', { error: errorMessage });
+      return { error: errorMessage };
     }
   }
 

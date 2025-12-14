@@ -153,6 +153,23 @@ export default function Atendimento() {
       // Adicionar mensagem à conversa ativa
       const newMsg = data.message as APIConversation;
       
+      // Mostrar toast de sucesso
+      playSuccessSound();
+      toast({
+        title: "Mensagem enviada",
+        description: "Sua mensagem foi enviada com sucesso",
+      });
+      
+      // Se estava criando nova conversa, fechar dialog e limpar campos
+      if (isNewConversationOpen) {
+        setIsNewConversationOpen(false);
+        setNewContactName("");
+        setNewContactPhone("");
+        setNewContactCpf("");
+        setNewContactContract("");
+        setNewContactMessage("");
+      }
+      
       setConversations(prev => {
         const existing = prev.find(c => c.contactPhone === newMsg.contactPhone);
         
@@ -202,7 +219,32 @@ export default function Atendimento() {
         });
       }
     }
-  }, []); // Sem dependências - usa ref
+  }, [playSuccessSound, isNewConversationOpen]); // Adicionar dependências
+
+  // Subscribe to message errors (bloqueios CPC, repescagem, etc)
+  useRealtimeSubscription('message-error', (data: any) => {
+    console.log('[Atendimento] Message error received:', data);
+    if (data?.error) {
+      playErrorSound();
+      
+      // Determinar título baseado no tipo de erro
+      let title = "Mensagem bloqueada";
+      if (data.error.includes('CPC')) {
+        title = "Bloqueio de CPC";
+      } else if (data.error.includes('repescagem') || data.error.includes('Aguarde')) {
+        title = "Bloqueio de Repescagem";
+      } else if (data.error.includes('permissão')) {
+        title = "Sem permissão";
+      }
+      
+      toast({
+        title,
+        description: data.error,
+        variant: "destructive",
+        duration: data.hoursRemaining ? 8000 : 5000, // Mostrar por mais tempo se tiver horas restantes
+      });
+    }
+  }, [playErrorSound]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -416,12 +458,8 @@ export default function Atendimento() {
           messageType: 'text',
         });
         
-        // A resposta virá via evento 'message-sent' ou 'new-message'
-        playSuccessSound();
-        toast({
-          title: "Mensagem enviada",
-          description: "Sua mensagem foi enviada com sucesso",
-        });
+        // A resposta virá via evento 'message-sent' (sucesso) ou 'message-error' (erro)
+        // Não mostrar sucesso imediatamente - aguardar confirmação
       } else {
         // Fallback: Usar REST API (apenas salva no banco, não envia via WhatsApp)
         console.log('[Atendimento] WebSocket não conectado, salvando via REST...');
@@ -534,11 +572,9 @@ export default function Atendimento() {
           isNewConversation: true, // Indica que é 1x1 para verificar permissão
         });
 
-        playSuccessSound();
-        toast({
-          title: "Conversa iniciada",
-          description: "Mensagem enviada via WhatsApp",
-        });
+        // Não mostrar sucesso imediatamente - aguardar confirmação ou erro
+        // O sucesso será mostrado quando receber 'message-sent' (e o dialog será fechado)
+        // O erro será mostrado quando receber 'message-error' (dialog permanece aberto)
       } else {
         // Fallback: Apenas salvar no banco
         await conversationsService.create({
@@ -560,14 +596,16 @@ export default function Atendimento() {
         });
         
         await loadConversations();
+        
+        // Fechar dialog apenas se não estiver usando WebSocket
+        setIsNewConversationOpen(false);
+        setNewContactName("");
+        setNewContactPhone("");
+        setNewContactCpf("");
+        setNewContactContract("");
+        setNewContactMessage("");
       }
-      
-      setIsNewConversationOpen(false);
-      setNewContactName("");
-      setNewContactPhone("");
-      setNewContactCpf("");
-      setNewContactContract("");
-      setNewContactMessage("");
+      // Se usar WebSocket, o dialog será fechado quando receber 'message-sent'
     } catch (error) {
       playErrorSound();
       toast({

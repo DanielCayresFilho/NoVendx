@@ -95,9 +95,11 @@ export class WebhooksService {
 
         // Processar mídia base64 se a linha tiver receiveMedia ativado
         if (line.receiveMedia && messageType !== 'text') {
+          console.log('🔍 [Webhook] Tentando extrair mídia Base64...');
           const base64Media = this.extractBase64Media(message.message);
           
           if (base64Media) {
+            console.log('✅ [Webhook] Base64 encontrado, mimetype:', base64Media.mimetype);
             try {
               const fileName = `${Date.now()}-${from}-${messageType}.${this.getExtension(messageType, base64Media.mimetype)}`;
               const localFileName = await this.saveBase64Media(base64Media.data, fileName, base64Media.mimetype);
@@ -109,22 +111,28 @@ export class WebhooksService {
             } catch (error) {
               console.error('❌ Erro ao salvar mídia Base64:', error.message);
             }
-          } else if (mediaUrl) {
-            // Fallback: baixar da URL se não tiver base64
-            try {
-              const fileName = `${Date.now()}-${from}-${messageType}.${this.getExtension(messageType)}`;
-              const localFileName = await this.mediaService.downloadMediaFromEvolution(mediaUrl, fileName);
-              
-              if (localFileName) {
-                mediaUrl = `/media/${localFileName}`;
-                console.log('📥 Mídia URL salva localmente:', mediaUrl);
+          } else {
+            console.log('⚠️ [Webhook] Base64 não encontrado, tentando baixar da URL...');
+            if (mediaUrl) {
+              // Fallback: baixar da URL se não tiver base64
+              try {
+                const fileName = `${Date.now()}-${from}-${messageType}.${this.getExtension(messageType)}`;
+                const localFileName = await this.mediaService.downloadMediaFromEvolution(mediaUrl, fileName);
+                
+                if (localFileName) {
+                  mediaUrl = `/media/${localFileName}`;
+                  console.log('📥 Mídia URL salva localmente:', mediaUrl);
+                }
+              } catch (error) {
+                console.error('❌ Erro ao baixar mídia:', error.message);
               }
-            } catch (error) {
-              console.error('❌ Erro ao baixar mídia:', error.message);
+            } else {
+              console.warn('⚠️ [Webhook] Nenhuma URL de mídia encontrada');
             }
           }
         } else if (mediaUrl && messageType !== 'text') {
           // Se não tem receiveMedia mas tem mídia por URL, tentar baixar
+          console.log('📥 [Webhook] Baixando mídia da URL (receiveMedia desativado):', mediaUrl);
           try {
             const fileName = `${Date.now()}-${from}-${messageType}.${this.getExtension(messageType)}`;
             const localFileName = await this.mediaService.downloadMediaFromEvolution(mediaUrl, fileName);
@@ -277,9 +285,18 @@ export class WebhooksService {
       if (message?.[type]) {
         const mediaMsg = message[type];
         
+        console.log(`🔍 [Webhook] Verificando ${type}:`, {
+          hasBase64: !!mediaMsg.base64,
+          hasMedia: !!mediaMsg.media,
+          hasDirectBase64: typeof mediaMsg === 'string',
+          mimetype: mediaMsg.mimetype,
+          keys: Object.keys(mediaMsg),
+        });
+        
         // A Evolution API pode enviar base64 em diferentes formatos
         // Formato 1: { base64: "...", mimetype: "..." }
         if (mediaMsg.base64) {
+          console.log(`✅ [Webhook] Base64 encontrado em ${type}.base64`);
           return {
             data: mediaMsg.base64,
             mimetype: mediaMsg.mimetype || this.getDefaultMimetype(type),
@@ -288,14 +305,25 @@ export class WebhooksService {
 
         // Formato 2: { mediaKey, ... } com base64 no campo data
         if (mediaMsg.media) {
+          console.log(`✅ [Webhook] Base64 encontrado em ${type}.media`);
           return {
             data: mediaMsg.media,
             mimetype: mediaMsg.mimetype || this.getDefaultMimetype(type),
           };
         }
+
+        // Formato 3: O próprio objeto pode ser base64 (string direta)
+        if (typeof mediaMsg === 'string' && mediaMsg.length > 100) {
+          console.log(`✅ [Webhook] Base64 encontrado como string direta em ${type}`);
+          return {
+            data: mediaMsg,
+            mimetype: this.getDefaultMimetype(type),
+          };
+        }
       }
     }
 
+    console.log('❌ [Webhook] Nenhum formato de base64 encontrado');
     return null;
   }
 
