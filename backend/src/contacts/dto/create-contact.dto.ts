@@ -1,4 +1,5 @@
-import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreateContactDto {
   @IsString()
@@ -20,4 +21,12 @@ export class CreateContactDto {
   @IsString()
   @IsOptional()
   contract?: string;
+
+  @Transform(({ value }) => {
+    if (value === null || value === undefined || value === '') return false;
+    return Boolean(value);
+  })
+  @IsBoolean()
+  @IsOptional()
+  isCPC?: boolean; // Se true, contato foi marcado como CPC
 }

@@ -20,6 +20,7 @@ import { TagsModule } from './tags/tags.module';
 import { ApiLogsModule } from './api-logs/api-logs.module';
 import { ApiMessagesModule } from './api-messages/api-messages.module';
 import { TemplatesModule } from './templates/templates.module';
+import { ControlPanelModule } from './control-panel/control-panel.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -54,6 +55,7 @@ import { HealthController } from './health/health.controller';
     ApiLogsModule,
     ApiMessagesModule,
     TemplatesModule,
+    ControlPanelModule,
   ],
   controllers: [HealthController],
   providers: [PrismaService],

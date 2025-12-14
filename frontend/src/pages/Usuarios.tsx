@@ -27,6 +27,7 @@ interface User {
   line?: number;
   lineName?: string;
   isOnline: boolean;
+  oneToOneActive?: boolean;
 }
 
 const roleColors = {
@@ -75,7 +76,8 @@ export default function Usuarios() {
     password: '', 
     role: 'operador', 
     segment: '',
-    line: '' 
+    line: '',
+    oneToOneActive: false
   });
 
   // Load data on mount
@@ -100,7 +102,8 @@ export default function Usuarios() {
         segment: u.segment ?? undefined,
         line: u.line ?? undefined,
         lineName: linesData.find(l => l.id === u.line)?.phone,
-        isOnline: u.status === 'Online'
+        isOnline: u.status === 'Online',
+        oneToOneActive: u.oneToOneActive ?? false
       })));
 
       setSegments(segmentsData);
@@ -151,7 +154,7 @@ export default function Usuarios() {
 
   const handleAdd = () => {
     setEditingUser(null);
-    setFormData({ name: '', email: '', password: '', role: 'operador', segment: '', line: '' });
+    setFormData({ name: '', email: '', password: '', role: 'operador', segment: '', line: '', oneToOneActive: false });
     setIsFormOpen(true);
   };
 
@@ -163,7 +166,8 @@ export default function Usuarios() {
       password: '', 
       role: user.role, 
       segment: user.segment ? String(user.segment) : '',
-      line: user.line ? String(user.line) : ''
+      line: user.line ? String(user.line) : '',
+      oneToOneActive: user.oneToOneActive ?? false
     });
     setIsFormOpen(true);
   };
@@ -214,6 +218,7 @@ export default function Usuarios() {
           role: mapRoleToApi(formData.role),
           segment: formData.segment ? Number(formData.segment) : null,
           line: formData.line ? Number(formData.line) : null,
+          oneToOneActive: formData.oneToOneActive,
         };
         if (formData.password) {
           updateData.password = formData.password;
@@ -228,7 +233,8 @@ export default function Usuarios() {
           segment: updated.segment ?? undefined,
           line: updated.line ?? undefined,
           lineName: lines.find(l => l.id === updated.line)?.phone,
-          isOnline: updated.status === 'Online'
+          isOnline: updated.status === 'Online',
+          oneToOneActive: updated.oneToOneActive ?? false
         } : u));
         toast({
           title: "Usuário atualizado",
@@ -242,6 +248,7 @@ export default function Usuarios() {
           role: mapRoleToApi(formData.role),
           segment: formData.segment ? Number(formData.segment) : undefined,
           line: formData.line ? Number(formData.line) : undefined,
+          oneToOneActive: formData.oneToOneActive,
         });
         setUsers([...users, {
           id: String(created.id),
@@ -251,7 +258,8 @@ export default function Usuarios() {
           segment: created.segment ?? undefined,
           line: created.line ?? undefined,
           lineName: lines.find(l => l.id === created.line)?.phone,
-          isOnline: created.status === 'Online'
+          isOnline: created.status === 'Online',
+          oneToOneActive: created.oneToOneActive ?? false
         }]);
         toast({
           title: "Usuário criado",
@@ -346,6 +354,22 @@ export default function Usuarios() {
         </Select>
         <p className="text-xs text-muted-foreground">Define qual linha será usada para envio de mensagens</p>
       </div>
+      {formData.role === 'operador' && (
+        <div className="flex items-center justify-between rounded-lg border p-4">
+          <div className="space-y-0.5">
+            <Label className="text-base font-medium">Permissão 1x1</Label>
+            <p className="text-sm text-muted-foreground">
+              Permitir que este operador inicie conversas 1x1
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            checked={formData.oneToOneActive}
+            onChange={(e) => setFormData({ ...formData, oneToOneActive: e.target.checked })}
+            className="h-4 w-4 rounded border-gray-300"
+          />
+        </div>
+      )}
       <DialogFooter>
         <Button variant="outline" onClick={() => setIsFormOpen(false)} disabled={isSaving}>
           Cancelar

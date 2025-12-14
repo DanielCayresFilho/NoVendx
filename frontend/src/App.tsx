@@ -24,6 +24,7 @@ import Evolution from "./pages/Evolution";
 import Tags from "./pages/Tags";
 import LogsAPI from "./pages/LogsAPI";
 import Templates from "./pages/Templates";
+import PainelControle from "./pages/PainelControle";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -67,6 +68,7 @@ function AppRoutes() {
       <Route path="/tags" element={<ProtectedRoute><Tags /></ProtectedRoute>} />
       <Route path="/logs" element={<ProtectedRoute><LogsAPI /></ProtectedRoute>} />
       <Route path="/templates" element={<ProtectedRoute><Templates /></ProtectedRoute>} />
+      <Route path="/painel-controle" element={<ProtectedRoute><PainelControle /></ProtectedRoute>} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

@@ -93,6 +93,7 @@ export interface User {
   segment: number | null;
   line: number | null;
   status: 'Online' | 'Offline';
+  oneToOneActive?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -105,6 +106,7 @@ export interface CreateUserData {
   segment?: number;
   line?: number;
   status?: 'Online' | 'Offline';
+  oneToOneActive?: boolean;
 }
 
 export interface UpdateUserData {
@@ -115,6 +117,7 @@ export interface UpdateUserData {
   segment?: number | null;
   line?: number | null;
   status?: 'Online' | 'Offline';
+  oneToOneActive?: boolean;
 }
 
 export const usersService = {
@@ -200,6 +203,7 @@ export interface Line {
   token?: string | null;
   businessID?: string | null;
   numberId?: string | null;
+  receiveMedia?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -214,6 +218,7 @@ export interface CreateLineData {
   token?: string;
   businessID?: string;
   numberId?: string;
+  receiveMedia?: boolean;
 }
 
 export const linesService = {
@@ -278,6 +283,8 @@ export interface Contact {
   segment: number | null;
   cpf?: string;
   contract?: string;
+  isCPC?: boolean;
+  lastCPCAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -288,6 +295,7 @@ export interface CreateContactData {
   segment?: number;
   cpf?: string;
   contract?: string;
+  isCPC?: boolean;
 }
 
 export const contactsService = {
@@ -300,6 +308,14 @@ export const contactsService = {
     return apiRequest<Contact>(`/contacts/${id}`);
   },
 
+  getByPhone: async (phone: string): Promise<Contact | null> => {
+    try {
+      return await apiRequest<Contact>(`/contacts/by-phone/${encodeURIComponent(phone)}`);
+    } catch {
+      return null;
+    }
+  },
+
   create: async (data: CreateContactData): Promise<Contact> => {
     return apiRequest<Contact>('/contacts', {
       method: 'POST',
@@ -309,6 +325,13 @@ export const contactsService = {
 
   update: async (id: number, data: Partial<CreateContactData>): Promise<Contact> => {
     return apiRequest<Contact>(`/contacts/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateByPhone: async (phone: string, data: Partial<CreateContactData>): Promise<Contact> => {
+    return apiRequest<Contact>(`/contacts/by-phone/${encodeURIComponent(phone)}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
@@ -867,5 +890,66 @@ export const apiLogsService = {
 
   getById: async (id: number): Promise<ApiLog> => {
     return apiRequest<ApiLog>(`/api-logs/${id}`);
+  },
+};
+
+// ==================== CONTROL PANEL ====================
+export interface ControlPanelSettings {
+  id: number | null;
+  segmentId: number | null;
+  blockPhrases: string[];
+  blockTabulationId: number | null;
+  cpcCooldownHours: number;
+  resendCooldownHours: number;
+  repescagemEnabled: boolean;
+  repescagemMaxMessages: number;
+  repescagemCooldownHours: number;
+  repescagemMaxAttempts: number;
+}
+
+export const controlPanelService = {
+  get: async (segmentId?: number): Promise<ControlPanelSettings> => {
+    const query = segmentId ? `?segmentId=${segmentId}` : '';
+    return apiRequest<ControlPanelSettings>(`/control-panel${query}`);
+  },
+
+  update: async (settings: Partial<ControlPanelSettings>): Promise<ControlPanelSettings> => {
+    return apiRequest<ControlPanelSettings>('/control-panel', {
+      method: 'POST',
+      body: JSON.stringify(settings),
+    });
+  },
+
+  addBlockPhrase: async (phrase: string, segmentId?: number): Promise<ControlPanelSettings> => {
+    const query = segmentId ? `?segmentId=${segmentId}` : '';
+    return apiRequest<ControlPanelSettings>(`/control-panel/block-phrases${query}`, {
+      method: 'POST',
+      body: JSON.stringify({ phrase }),
+    });
+  },
+
+  removeBlockPhrase: async (phrase: string, segmentId?: number): Promise<ControlPanelSettings> => {
+    const query = segmentId ? `?segmentId=${segmentId}` : '';
+    return apiRequest<ControlPanelSettings>(`/control-panel/block-phrases${query}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ phrase }),
+    });
+  },
+
+  checkCPC: async (phone: string, segmentId?: number): Promise<{ allowed: boolean; reason?: string; hoursRemaining?: number }> => {
+    const query = segmentId ? `?segmentId=${segmentId}` : '';
+    return apiRequest(`/control-panel/check-cpc/${encodeURIComponent(phone)}${query}`);
+  },
+
+  checkResend: async (phone: string, segmentId?: number): Promise<{ allowed: boolean; reason?: string; hoursRemaining?: number }> => {
+    const query = segmentId ? `?segmentId=${segmentId}` : '';
+    return apiRequest(`/control-panel/check-resend/${encodeURIComponent(phone)}${query}`);
+  },
+
+  markAsCPC: async (phone: string, isCPC: boolean): Promise<{ success: boolean }> => {
+    return apiRequest(`/control-panel/mark-cpc/${encodeURIComponent(phone)}`, {
+      method: 'POST',
+      body: JSON.stringify({ isCPC }),
+    });
   },
 };

@@ -102,11 +102,14 @@ export class LinesService {
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       try {
+        // webhook_base64 = true para receber mídia (imagens, áudios, docs) em base64
+        const enableBase64 = createLineDto.receiveMedia === true;
+        
         const webhookData = {
           url: webhookUrl,
           enabled: true,
           webhook_by_events: true,
-          webhook_base64: true,
+          webhook_base64: enableBase64, // Ativa base64 apenas se linha tiver receiveMedia = true
           events: [
             'MESSAGES_UPSERT',    // Mensagens recebidas/enviadas
             'MESSAGES_UPDATE',     // Atualização de status (sent, delivered, read)
@@ -149,7 +152,7 @@ export class LinesService {
                 url: webhookUrl,
                 enabled: true,
                 webhook_by_events: true,
-                webhook_base64: true,
+                webhook_base64: enableBase64,
                 events: [
                   'MESSAGES_UPSERT',
                   'MESSAGES_UPDATE',
@@ -359,12 +362,64 @@ export class LinesService {
   }
 
   async update(id: number, updateLineDto: UpdateLineDto) {
-    await this.findOne(id);
+    const currentLine = await this.findOne(id);
+
+    // Se receiveMedia foi alterado, reconfigurar webhook
+    if (updateLineDto.receiveMedia !== undefined && updateLineDto.receiveMedia !== currentLine.receiveMedia) {
+      await this.updateWebhookConfig(currentLine, updateLineDto.receiveMedia);
+    }
 
     return this.prisma.linesStock.update({
       where: { id },
       data: updateLineDto,
     });
+  }
+
+  // Atualiza configuração do webhook na Evolution (base64 on/off)
+  private async updateWebhookConfig(line: any, enableBase64: boolean) {
+    const evolution = await this.prisma.evolution.findUnique({
+      where: { evolutionName: line.evolutionName },
+    });
+
+    if (!evolution) {
+      console.warn('⚠️ Evolution não encontrada para atualizar webhook');
+      return;
+    }
+
+    try {
+      const instanceName = `line_${line.phone.replace(/\D/g, '')}`;
+      const webhookUrl = `${process.env.APP_URL || 'http://localhost:3000'}/webhooks/evolution`;
+
+      const webhookData = {
+        url: webhookUrl,
+        enabled: true,
+        webhook_by_events: true,
+        webhook_base64: enableBase64,
+        events: [
+          'MESSAGES_UPSERT',
+          'MESSAGES_UPDATE',
+          'CONNECTION_UPDATE',
+        ],
+      };
+
+      console.log(`🔄 Atualizando webhook base64=${enableBase64} para linha ${line.phone}`);
+
+      await axios.post(
+        `${evolution.evolutionUrl}/webhook/set/${instanceName}`,
+        webhookData,
+        {
+          headers: {
+            'apikey': evolution.evolutionKey,
+            'Content-Type': 'application/json',
+          },
+          timeout: 10000,
+        }
+      );
+
+      console.log(`✅ Webhook atualizado com sucesso para linha ${line.phone}`);
+    } catch (error) {
+      console.error('❌ Erro ao atualizar webhook:', error.response?.data || error.message);
+    }
   }
 
   async remove(id: number) {

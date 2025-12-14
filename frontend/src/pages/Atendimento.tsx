@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Send, FileText, MessageCircle, ArrowRight, ArrowLeft, Loader2, Wifi, WifiOff } from "lucide-react";
+import { Plus, Send, FileText, MessageCircle, ArrowRight, ArrowLeft, Loader2, Wifi, WifiOff, Edit, UserCheck, X, Check } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
@@ -22,9 +22,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { useNotificationSound } from "@/hooks/useNotificationSound";
 import { toast } from "@/hooks/use-toast";
-import { conversationsService, tabulationsService, contactsService, Conversation as APIConversation, Tabulation } from "@/services/api";
+import { conversationsService, tabulationsService, contactsService, Contact, Conversation as APIConversation, Tabulation } from "@/services/api";
 import { useRealtimeConnection, useRealtimeSubscription } from "@/hooks/useRealtimeConnection";
 import { WS_EVENTS, realtimeSocket } from "@/services/websocket";
 import { format } from "date-fns";
@@ -58,6 +59,15 @@ export default function Atendimento() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { playMessageSound, playSuccessSound, playErrorSound } = useNotificationSound();
   const { isConnected: isRealtimeConnected } = useRealtimeConnection();
+  
+  // Estado para edição de contato
+  const [isEditContactOpen, setIsEditContactOpen] = useState(false);
+  const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [editContactName, setEditContactName] = useState("");
+  const [editContactCpf, setEditContactCpf] = useState("");
+  const [editContactContract, setEditContactContract] = useState("");
+  const [editContactIsCPC, setEditContactIsCPC] = useState(false);
+  const [isSavingContact, setIsSavingContact] = useState(false);
   const previousConversationsRef = useRef<ConversationGroup[]>([]);
 
   // Subscribe to new messages in real-time
@@ -273,6 +283,98 @@ export default function Atendimento() {
     }
   }, []);
 
+  // Carregar dados do contato para edição
+  const openEditContact = useCallback(async () => {
+    if (!selectedConversation) return;
+    
+    try {
+      const contact = await contactsService.getByPhone(selectedConversation.contactPhone);
+      if (contact) {
+        setEditingContact(contact);
+        setEditContactName(contact.name);
+        setEditContactCpf(contact.cpf || "");
+        setEditContactContract(contact.contract || "");
+        setEditContactIsCPC(contact.isCPC || false);
+        setIsEditContactOpen(true);
+      } else {
+        // Contato não existe, criar com dados básicos
+        setEditingContact(null);
+        setEditContactName(selectedConversation.contactName);
+        setEditContactCpf("");
+        setEditContactContract("");
+        setEditContactIsCPC(false);
+        setIsEditContactOpen(true);
+      }
+    } catch (error) {
+      console.error('Error loading contact:', error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar os dados do contato",
+        variant: "destructive",
+      });
+    }
+  }, [selectedConversation]);
+
+  // Salvar alterações do contato
+  const handleSaveContact = useCallback(async () => {
+    if (!selectedConversation) return;
+    
+    setIsSavingContact(true);
+    try {
+      const updateData = {
+        name: editContactName.trim(),
+        cpf: editContactCpf.trim() || undefined,
+        contract: editContactContract.trim() || undefined,
+        isCPC: editContactIsCPC,
+      };
+
+      if (editingContact) {
+        await contactsService.updateByPhone(selectedConversation.contactPhone, updateData);
+      } else {
+        // Criar contato se não existir
+        await contactsService.create({
+          name: editContactName.trim(),
+          phone: selectedConversation.contactPhone,
+          cpf: editContactCpf.trim() || undefined,
+          contract: editContactContract.trim() || undefined,
+          isCPC: editContactIsCPC,
+          segment: user?.segmentId,
+        });
+      }
+
+      // Atualizar nome na conversa selecionada
+      if (editContactName.trim() !== selectedConversation.contactName) {
+        setSelectedConversation(prev => prev ? {
+          ...prev,
+          contactName: editContactName.trim(),
+        } : null);
+
+        // Atualizar na lista de conversas
+        setConversations(prev => prev.map(c => 
+          c.contactPhone === selectedConversation.contactPhone 
+            ? { ...c, contactName: editContactName.trim() }
+            : c
+        ));
+      }
+
+      playSuccessSound();
+      toast({
+        title: "Contato atualizado",
+        description: editContactIsCPC ? "Contato marcado como CPC" : "Dados salvos com sucesso",
+      });
+      setIsEditContactOpen(false);
+    } catch (error) {
+      playErrorSound();
+      toast({
+        title: "Erro ao salvar",
+        description: error instanceof Error ? error.message : "Erro ao salvar contato",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingContact(false);
+    }
+  }, [selectedConversation, editingContact, editContactName, editContactCpf, editContactContract, editContactIsCPC, user, playSuccessSound, playErrorSound]);
+
   useEffect(() => {
     loadConversations();
     loadTabulations();
@@ -429,6 +531,7 @@ export default function Atendimento() {
           contactPhone: newContactPhone.trim(),
           message: newContactMessage.trim(),
           messageType: 'text',
+          isNewConversation: true, // Indica que é 1x1 para verificar permissão
         });
 
         playSuccessSound();
@@ -663,6 +766,16 @@ export default function Atendimento() {
                     <p className="font-medium text-foreground">{selectedConversation.contactName}</p>
                     <p className="text-xs text-muted-foreground">{selectedConversation.contactPhone}</p>
                   </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={openEditContact}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Editar Contato</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -682,6 +795,77 @@ export default function Atendimento() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
+
+              {/* Modal de Edição de Contato */}
+              <Dialog open={isEditContactOpen} onOpenChange={setIsEditContactOpen}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Editar Contato</DialogTitle>
+                    <DialogDescription>
+                      Edite as informações do contato
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-name">Nome</Label>
+                      <Input
+                        id="edit-name"
+                        placeholder="Nome do contato"
+                        value={editContactName}
+                        onChange={(e) => setEditContactName(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-cpf">CPF</Label>
+                      <Input
+                        id="edit-cpf"
+                        placeholder="000.000.000-00"
+                        value={editContactCpf}
+                        onChange={(e) => setEditContactCpf(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-contract">Contrato</Label>
+                      <Input
+                        id="edit-contract"
+                        placeholder="Número do contrato"
+                        value={editContactContract}
+                        onChange={(e) => setEditContactContract(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <Label className="text-base font-medium">Marcar como CPC</Label>
+                        <p className="text-sm text-muted-foreground">
+                          Contato foi contatado com sucesso
+                        </p>
+                      </div>
+                      <Switch
+                        checked={editContactIsCPC}
+                        onCheckedChange={setEditContactIsCPC}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsEditContactOpen(false)}>
+                      Cancelar
+                    </Button>
+                    <Button onClick={handleSaveContact} disabled={isSavingContact}>
+                      {isSavingContact ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Salvando...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="mr-2 h-4 w-4" />
+                          Salvar
+                        </>
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
 
               {/* Messages */}
               <ScrollArea className="flex-1 p-4">

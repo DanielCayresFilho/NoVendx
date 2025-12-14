@@ -49,7 +49,8 @@ export default function Linhas() {
     isOfficial: false,
     token: '',
     businessId: '',
-    numberId: ''
+    numberId: '',
+    receiveMedia: false
   });
   const [isQrCodeOpen, setIsQrCodeOpen] = useState(false);
   const [qrCodeState, setQrCodeState] = useState<'loading' | 'success' | 'error'>('loading');
@@ -118,21 +119,37 @@ export default function Linhas() {
 
   const handleAdd = () => {
     setEditingLine(null);
-    setFormData({ phone: '', segment: '', evolutionId: '', isOfficial: false, token: '', businessId: '', numberId: '' });
+    setFormData({ phone: '', segment: '', evolutionId: '', isOfficial: false, token: '', businessId: '', numberId: '', receiveMedia: false });
     setIsFormOpen(true);
   };
 
-  const handleEdit = (line: Line) => {
+  const handleEdit = async (line: Line) => {
     setEditingLine(line);
-    setFormData({
-      phone: line.phone,
-      segment: line.segment ? String(line.segment) : '',
-      evolutionId: line.evolutionName || '',
-      isOfficial: line.type === 'official',
-      token: '',
-      businessId: '',
-      numberId: ''
-    });
+    // Buscar dados completos da linha para pegar receiveMedia
+    try {
+      const fullLine = await linesService.getById(Number(line.id));
+      setFormData({
+        phone: line.phone,
+        segment: line.segment ? String(line.segment) : '',
+        evolutionId: line.evolutionName || '',
+        isOfficial: line.type === 'official',
+        token: '',
+        businessId: '',
+        numberId: '',
+        receiveMedia: fullLine.receiveMedia || false
+      });
+    } catch {
+      setFormData({
+        phone: line.phone,
+        segment: line.segment ? String(line.segment) : '',
+        evolutionId: line.evolutionName || '',
+        isOfficial: line.type === 'official',
+        token: '',
+        businessId: '',
+        numberId: '',
+        receiveMedia: false
+      });
+    }
     setIsFormOpen(true);
   };
 
@@ -188,6 +205,7 @@ export default function Linhas() {
         token: formData.isOfficial ? formData.token : undefined,
         businessID: formData.isOfficial ? formData.businessId : undefined,
         numberId: formData.isOfficial ? formData.numberId : undefined,
+        receiveMedia: formData.receiveMedia,
       };
 
       if (editingLine) {
@@ -334,6 +352,21 @@ export default function Linhas() {
         </Select>
       </div>
       
+      {/* Receber Mídia - ativa webhook_base64 para receber imagens/áudios/docs */}
+      <div className="flex items-center space-x-2 pt-2">
+        <Checkbox
+          id="receiveMedia"
+          checked={formData.receiveMedia}
+          onCheckedChange={(checked) => setFormData({ ...formData, receiveMedia: checked === true })}
+        />
+        <Label htmlFor="receiveMedia" className="text-sm font-normal">
+          Receber Mídia (imagens, áudios, documentos)
+        </Label>
+      </div>
+      <p className="text-xs text-muted-foreground -mt-2">
+        Ativa o recebimento de arquivos de mídia via webhook Base64
+      </p>
+
       {/* OCULTO: Opção Cloud API - Funcionalidade oculta por enquanto
       <div className="flex items-center space-x-2 pt-2">
         <Checkbox

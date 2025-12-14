@@ -24,10 +24,22 @@ export class ContactsController {
     return this.contactsService.findAll(search, segment ? parseInt(segment) : undefined);
   }
 
+  @Get('by-phone/:phone')
+  @Roles(Role.admin, Role.supervisor, Role.operator)
+  findByPhone(@Param('phone') phone: string) {
+    return this.contactsService.findByPhone(phone);
+  }
+
   @Get(':id')
   @Roles(Role.admin, Role.supervisor, Role.operator)
   findOne(@Param('id') id: string) {
     return this.contactsService.findOne(+id);
+  }
+
+  @Patch('by-phone/:phone')
+  @Roles(Role.admin, Role.supervisor, Role.operator)
+  updateByPhone(@Param('phone') phone: string, @Body() updateContactDto: UpdateContactDto) {
+    return this.contactsService.updateByPhone(phone, updateContactDto);
   }
 
   @Patch(':id')

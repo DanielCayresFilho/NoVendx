@@ -37,16 +37,17 @@ enum Speed {
 
 // Models
 model User {
-  id            Int             @id @default(autoincrement())
-  name          String
-  email         String          @unique
-  password      String
-  role          Role
-  segment       Int?
-  line          Int?
-  status        Status          @default(Offline)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id              Int             @id @default(autoincrement())
+  name            String
+  email           String          @unique
+  password        String
+  role            Role
+  segment         Int?
+  line            Int?
+  status          Status          @default(Offline)
+  oneToOneActive  Boolean         @default(false) // Se true, operador pode chamar clientes no 1x1
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   @@index([email])
   @@index([segment])
@@ -80,12 +81,15 @@ model Contact {
   segment       Int?
   cpf           String?
   contract      String?
+  isCPC         Boolean         @default(false) // Se true, contato foi marcado como CPC
+  lastCPCAt     DateTime?       // Última vez que foi marcado como CPC (para temporizador)
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
   @@index([phone])
   @@index([cpf])
   @@index([segment])
+  @@index([isCPC])
 }
 
 model Campaign {
@@ -136,6 +140,7 @@ model LinesStock {
   token           String?
   businessID      String?
   numberId        String?
+  receiveMedia    Boolean       @default(false) // Se true, ativa webhook_base64 para receber imagens/áudios/docs
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -255,4 +260,63 @@ model TemplateMessage {
   @@index([status])
   @@index([campaignId])
   @@index([createdAt])
+}
+
+// Painel de Controle - Configurações globais do sistema
+model ControlPanel {
+  id                      Int         @id @default(autoincrement())
+  segmentId               Int?        // null = global (todos os segmentos)
+
+  // Frases de bloqueio automático (JSON array de strings)
+  blockPhrases            String?     @db.Text
+  blockTabulationId       Int?        // Tabulação padrão ao bloquear
+
+  // Temporizador de CPC (em horas)
+  cpcCooldownHours        Int         @default(24)
+
+  // Reenvio - Intervalo mínimo entre campanhas para o mesmo telefone (em horas)
+  resendCooldownHours     Int         @default(24)
+
+  // Repescagem - Controle de mensagens seguidas do operador
+  repescagemEnabled       Boolean     @default(false)
+  repescagemMaxMessages   Int         @default(2)    // Quantas msgs seguidas antes de bloquear
+  repescagemCooldownHours Int         @default(24)   // Tempo de espera após bloqueio
+  repescagemMaxAttempts   Int         @default(2)    // Limite de repescagens (0 = ilimitado)
+
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
+
+  @@unique([segmentId])
+  @@index([segmentId])
+}
+
+// Histórico de repescagem por contato
+model ContactRepescagem {
+  id              Int         @id @default(autoincrement())
+  contactPhone    String
+  operatorId      Int
+  messagesCount   Int         @default(0)     // Contagem de msgs seguidas do operador
+  attempts        Int         @default(0)     // Quantidade de repescagens realizadas
+  blockedUntil    DateTime?                   // Bloqueado até essa data
+  permanentBlock  Boolean     @default(false) // Se true, só libera se cliente responder
+  lastMessageAt   DateTime    @default(now())
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@unique([contactPhone, operatorId])
+  @@index([contactPhone])
+  @@index([operatorId])
+  @@index([blockedUntil])
+}
+
+// Histórico de envio para controle de reenvio
+model SendHistory {
+  id              Int         @id @default(autoincrement())
+  contactPhone    String
+  campaignId      Int?
+  lineId          Int?
+  sentAt          DateTime    @default(now())
+
+  @@index([contactPhone])
+  @@index([sentAt])
 }

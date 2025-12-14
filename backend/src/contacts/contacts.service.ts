@@ -58,6 +58,27 @@ export class ContactsService {
     });
   }
 
+  // Atualizar contato por telefone (útil para atualizar durante atendimento)
+  async updateByPhone(phone: string, updateContactDto: UpdateContactDto) {
+    const contact = await this.findByPhone(phone);
+    
+    if (!contact) {
+      throw new NotFoundException(`Contato com telefone ${phone} não encontrado`);
+    }
+
+    // Se marcando como CPC, atualizar lastCPCAt
+    if (updateContactDto.isCPC === true) {
+      (updateContactDto as any).lastCPCAt = new Date();
+    } else if (updateContactDto.isCPC === false) {
+      (updateContactDto as any).lastCPCAt = null;
+    }
+
+    return this.prisma.contact.update({
+      where: { id: contact.id },
+      data: updateContactDto,
+    });
+  }
+
   async remove(id: number) {
     await this.findOne(id);
 

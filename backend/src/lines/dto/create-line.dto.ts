@@ -64,4 +64,12 @@ export class CreateLineDto {
   @IsString()
   @IsOptional()
   numberId?: string | null;
+
+  @Transform(({ value }) => {
+    if (value === null || value === undefined || value === '') return false;
+    return Boolean(value);
+  })
+  @IsBoolean()
+  @IsOptional()
+  receiveMedia?: boolean; // Se true, ativa webhook_base64 para receber imagens/áudios/docs
 }

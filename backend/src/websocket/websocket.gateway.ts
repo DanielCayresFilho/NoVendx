@@ -12,6 +12,7 @@ import { UseGuards } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { ControlPanelService } from '../control-panel/control-panel.service';
 import axios from 'axios';
 
 @WebSocketGateway({
@@ -40,6 +41,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     private jwtService: JwtService,
     private prisma: PrismaService,
     private conversationsService: ConversationsService,
+    private controlPanelService: ControlPanelService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -87,7 +89,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
   @SubscribeMessage('send-message')
   async handleSendMessage(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { contactPhone: string; message: string; messageType?: string; mediaUrl?: string },
+    @MessageBody() data: { contactPhone: string; message: string; messageType?: string; mediaUrl?: string; isNewConversation?: boolean },
   ) {
     console.log(`📤 [WebSocket] Recebido send-message:`, JSON.stringify(data, null, 2));
     
@@ -99,7 +101,37 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       return { error: 'Usuário não autenticado ou sem linha atribuída' };
     }
 
+    // Verificar se é uma nova conversa (1x1) e se o operador tem permissão
+    if (data.isNewConversation) {
+      const fullUser = await this.prisma.user.findUnique({
+        where: { id: user.id },
+      });
+
+      if (!fullUser?.oneToOneActive) {
+        console.error('❌ [WebSocket] Operador sem permissão para 1x1');
+        return { error: 'Você não tem permissão para iniciar conversas 1x1' };
+      }
+    }
+
     try {
+      // Verificar CPC
+      const cpcCheck = await this.controlPanelService.canContactCPC(data.contactPhone, user.segment);
+      if (!cpcCheck.allowed) {
+        console.warn('⚠️ [WebSocket] Bloqueio CPC:', cpcCheck.reason);
+        return { error: cpcCheck.reason };
+      }
+
+      // Verificar repescagem
+      const repescagemCheck = await this.controlPanelService.checkRepescagem(
+        data.contactPhone,
+        user.id,
+        user.segment
+      );
+      if (!repescagemCheck.allowed) {
+        console.warn('⚠️ [WebSocket] Bloqueio Repescagem:', repescagemCheck.reason);
+        return { error: repescagemCheck.reason };
+      }
+
       // Buscar linha do usuário
       const line = await this.prisma.linesStock.findUnique({
         where: { id: user.line },
@@ -173,6 +205,13 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
       console.log(`✅ [WebSocket] Mensagem salva no banco, ID: ${conversation.id}`);
       
+      // Registrar mensagem do operador para controle de repescagem
+      await this.controlPanelService.registerOperatorMessage(
+        data.contactPhone,
+        user.id,
+        user.segment
+      );
+
       // Emitir mensagem para o usuário (usar mesmo formato que new_message)
       client.emit('message-sent', { message: conversation });
       console.log(`📤 [WebSocket] Emitido message-sent para o cliente`);

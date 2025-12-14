@@ -1,9 +1,10 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { WebsocketGateway } from './websocket.gateway';
 import { PrismaService } from '../prisma.service';
 import { ConversationsModule } from '../conversations/conversations.module';
+import { ControlPanelModule } from '../control-panel/control-panel.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { ConversationsModule } from '../conversations/conversations.module';
       }),
     }),
     ConversationsModule,
+    ControlPanelModule,
   ],
   providers: [WebsocketGateway, PrismaService],
   exports: [WebsocketGateway],

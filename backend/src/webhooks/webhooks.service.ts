@@ -4,15 +4,23 @@ import { ConversationsService } from '../conversations/conversations.service';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { LinesService } from '../lines/lines.service';
 import { MediaService } from '../media/media.service';
+import { ControlPanelService } from '../control-panel/control-panel.service';
+import { BlocklistService } from '../blocklist/blocklist.service';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 @Injectable()
 export class WebhooksService {
+  private readonly uploadsDir = './uploads';
+
   constructor(
     private prisma: PrismaService,
     private conversationsService: ConversationsService,
     private websocketGateway: WebsocketGateway,
     private linesService: LinesService,
     private mediaService: MediaService,
+    private controlPanelService: ControlPanelService,
+    private blocklistService: BlocklistService,
   ) {}
 
   async handleEvolutionMessage(data: any) {
@@ -68,22 +76,6 @@ export class WebhooksService {
         const messageType = this.getMessageType(message.message);
         let mediaUrl = this.getMediaUrl(message.message);
 
-        // Se houver mídia, baixar da Evolution
-        if (mediaUrl && messageType !== 'text') {
-          try {
-            const fileName = `${Date.now()}-${from}-${messageType}.${this.getExtension(messageType)}`;
-            const localFileName = await this.mediaService.downloadMediaFromEvolution(mediaUrl, fileName);
-            
-            if (localFileName) {
-              mediaUrl = `/media/${localFileName}`;
-              console.log('📥 Mídia salva localmente:', mediaUrl);
-            }
-          } catch (error) {
-            console.error('❌ Erro ao baixar mídia:', error.message);
-            // Continuar mesmo com erro no download
-          }
-        }
-
         // Buscar a linha que recebeu a mensagem
         const instanceName = data.instance || data.instanceName;
         const phoneNumber = instanceName?.replace('line_', '');
@@ -99,6 +91,51 @@ export class WebhooksService {
         if (!line) {
           console.warn('Linha não encontrada para o número:', phoneNumber);
           return { status: 'ignored', reason: 'Line not found' };
+        }
+
+        // Processar mídia base64 se a linha tiver receiveMedia ativado
+        if (line.receiveMedia && messageType !== 'text') {
+          const base64Media = this.extractBase64Media(message.message);
+          
+          if (base64Media) {
+            try {
+              const fileName = `${Date.now()}-${from}-${messageType}.${this.getExtension(messageType, base64Media.mimetype)}`;
+              const localFileName = await this.saveBase64Media(base64Media.data, fileName, base64Media.mimetype);
+              
+              if (localFileName) {
+                mediaUrl = `/media/${localFileName}`;
+                console.log('📥 Mídia Base64 salva localmente:', mediaUrl);
+              }
+            } catch (error) {
+              console.error('❌ Erro ao salvar mídia Base64:', error.message);
+            }
+          } else if (mediaUrl) {
+            // Fallback: baixar da URL se não tiver base64
+            try {
+              const fileName = `${Date.now()}-${from}-${messageType}.${this.getExtension(messageType)}`;
+              const localFileName = await this.mediaService.downloadMediaFromEvolution(mediaUrl, fileName);
+              
+              if (localFileName) {
+                mediaUrl = `/media/${localFileName}`;
+                console.log('📥 Mídia URL salva localmente:', mediaUrl);
+              }
+            } catch (error) {
+              console.error('❌ Erro ao baixar mídia:', error.message);
+            }
+          }
+        } else if (mediaUrl && messageType !== 'text') {
+          // Se não tem receiveMedia mas tem mídia por URL, tentar baixar
+          try {
+            const fileName = `${Date.now()}-${from}-${messageType}.${this.getExtension(messageType)}`;
+            const localFileName = await this.mediaService.downloadMediaFromEvolution(mediaUrl, fileName);
+            
+            if (localFileName) {
+              mediaUrl = `/media/${localFileName}`;
+              console.log('📥 Mídia salva localmente:', mediaUrl);
+            }
+          } catch (error) {
+            console.error('❌ Erro ao baixar mídia:', error.message);
+          }
         }
 
         // Buscar contato
@@ -117,6 +154,27 @@ export class WebhooksService {
           });
         }
 
+        // Registrar resposta do cliente (reseta repescagem)
+        await this.controlPanelService.registerClientResponse(from);
+
+        // Verificar frases de bloqueio automático
+        const isBlockPhrase = await this.controlPanelService.checkBlockPhrases(messageText, line.segment);
+        
+        let blockedByPhrase = false;
+        if (isBlockPhrase) {
+          console.log('🚫 Frase de bloqueio detectada:', messageText);
+          blockedByPhrase = true;
+          
+          // Adicionar à blocklist
+          await this.blocklistService.create({
+            name: contact.name,
+            phone: from,
+            cpf: contact.cpf,
+          });
+
+          console.log('✅ Contato adicionado à blocklist:', from);
+        }
+
         // Criar conversa
         const conversation = await this.conversationsService.create({
           contactName: contact.name,
@@ -130,10 +188,15 @@ export class WebhooksService {
           mediaUrl,
         });
 
-        // Emitir via WebSocket
-        await this.websocketGateway.emitNewMessage(conversation);
+        // Emitir via WebSocket (incluir flag de bloqueio se aplicável)
+        const messagePayload = {
+          ...conversation,
+          blockedByPhrase,
+        };
+        
+        await this.websocketGateway.emitNewMessage(messagePayload);
 
-        return { status: 'success', conversation };
+        return { status: 'success', conversation, blockedByPhrase };
       }
 
       // Verificar status de conexão
@@ -185,7 +248,17 @@ export class WebhooksService {
     return undefined;
   }
 
-  private getExtension(messageType: string): string {
+  private getExtension(messageType: string, mimetype?: string): string {
+    // Tentar extrair do mimetype primeiro
+    if (mimetype) {
+      const ext = mimetype.split('/')[1]?.split(';')[0];
+      if (ext) {
+        // Normalizar extensões comuns
+        const normalizedExt = ext.replace('jpeg', 'jpg').replace('mpeg', 'mp3');
+        return normalizedExt;
+      }
+    }
+
     const extensions = {
       image: 'jpg',
       video: 'mp4',
@@ -193,5 +266,66 @@ export class WebhooksService {
       document: 'pdf',
     };
     return extensions[messageType] || 'bin';
+  }
+
+  // Extrair mídia em Base64 da mensagem (quando webhook_base64 = true)
+  private extractBase64Media(message: any): { data: string; mimetype: string } | null {
+    // Verificar cada tipo de mídia
+    const mediaTypes = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage'];
+
+    for (const type of mediaTypes) {
+      if (message?.[type]) {
+        const mediaMsg = message[type];
+        
+        // A Evolution API pode enviar base64 em diferentes formatos
+        // Formato 1: { base64: "...", mimetype: "..." }
+        if (mediaMsg.base64) {
+          return {
+            data: mediaMsg.base64,
+            mimetype: mediaMsg.mimetype || this.getDefaultMimetype(type),
+          };
+        }
+
+        // Formato 2: { mediaKey, ... } com base64 no campo data
+        if (mediaMsg.media) {
+          return {
+            data: mediaMsg.media,
+            mimetype: mediaMsg.mimetype || this.getDefaultMimetype(type),
+          };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private getDefaultMimetype(messageType: string): string {
+    const mimetypes = {
+      imageMessage: 'image/jpeg',
+      videoMessage: 'video/mp4',
+      audioMessage: 'audio/ogg',
+      documentMessage: 'application/pdf',
+    };
+    return mimetypes[messageType] || 'application/octet-stream';
+  }
+
+  // Salvar mídia Base64 em arquivo
+  private async saveBase64Media(base64Data: string, fileName: string, mimetype: string): Promise<string | null> {
+    try {
+      // Remover prefixo data:xxx;base64, se existir
+      const base64Clean = base64Data.replace(/^data:[^;]+;base64,/, '');
+      
+      const buffer = Buffer.from(base64Clean, 'base64');
+      const filePath = path.join(this.uploadsDir, fileName);
+      
+      await fs.mkdir(this.uploadsDir, { recursive: true });
+      await fs.writeFile(filePath, buffer);
+      
+      console.log(`📁 Arquivo Base64 salvo: ${fileName} (${buffer.length} bytes)`);
+      return fileName;
+    } catch (error) {
+      console.error('❌ Erro ao salvar arquivo Base64:', error);
+      return null;
+    }
   }
 }
