@@ -7,7 +7,8 @@ WORKDIR /app
 COPY package*.json ./
 
 # Instalar dependências
-RUN npm ci --legacy-peer-deps
+# Usar npm install com --legacy-peer-deps para compatibilidade
+RUN npm install --legacy-peer-deps
 
 # Copiar código fonte
 COPY . .
