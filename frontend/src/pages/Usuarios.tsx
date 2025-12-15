@@ -354,10 +354,10 @@ export default function Usuarios() {
                 return !isLineInUse;
               })
               .map((line) => (
-                <SelectItem key={line.id} value={String(line.id)}>
-                  {line.phone} {line.oficial ? "(Oficial)" : `(${line.evolutionName})`}
-                </SelectItem>
-              ))}
+              <SelectItem key={line.id} value={String(line.id)}>
+                {line.phone} {line.oficial ? "(Oficial)" : `(${line.evolutionName})`}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">Define qual linha será usada para envio de mensagens (apenas linhas sem vínculo)</p>

@@ -596,14 +596,14 @@ export default function Atendimento() {
         });
         
         await loadConversations();
-        
+      
         // Fechar dialog apenas se não estiver usando WebSocket
-        setIsNewConversationOpen(false);
-        setNewContactName("");
-        setNewContactPhone("");
-        setNewContactCpf("");
-        setNewContactContract("");
-        setNewContactMessage("");
+      setIsNewConversationOpen(false);
+      setNewContactName("");
+      setNewContactPhone("");
+      setNewContactCpf("");
+      setNewContactContract("");
+      setNewContactMessage("");
       }
       // Se usar WebSocket, o dialog será fechado quando receber 'message-sent'
     } catch (error) {

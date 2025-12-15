@@ -212,8 +212,8 @@ export class UsersService {
                 }
               }
 
-              // Criar usuário (padrão: operador, senha inicial = email)
-              const defaultPassword = email; // Senha inicial = email
+              // Criar usuário (padrão: operador, senha inicial = #Pasch@20.25)
+              const defaultPassword = '#Pasch@20.25';
               const hashedPassword = await argon2.hash(defaultPassword);
 
               await this.prisma.user.create({

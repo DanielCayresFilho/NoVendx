@@ -299,7 +299,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         user.id,
         user.segment
       );
-
+      
       // Emitir mensagem para o usuário (usar mesmo formato que new_message)
       client.emit('message-sent', { message: conversation });
       console.log(`📤 [WebSocket] Emitido message-sent para o cliente`);
