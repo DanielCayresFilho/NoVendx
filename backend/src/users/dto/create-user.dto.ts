@@ -46,10 +46,11 @@ export class CreateUserDto {
   status?: Status;
 
   @Transform(({ value }) => {
-    if (value === null || value === undefined || value === '') return false;
+    // Se não for especificado, retornar undefined para usar o default do schema (true)
+    if (value === null || value === undefined || value === '') return undefined;
     return Boolean(value);
   })
   @IsBoolean()
   @IsOptional()
-  oneToOneActive?: boolean; // Se true, operador pode chamar clientes no 1x1
+  oneToOneActive?: boolean; // Se true, operador pode chamar clientes no 1x1 (padrão: true)
 }

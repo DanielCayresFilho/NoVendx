@@ -46,7 +46,7 @@ model User {
   segment        Int?
   line           Int?
   status         Status   @default(Offline)
-  oneToOneActive Boolean  @default(false) // Se true, operador pode chamar clientes no 1x1
+  oneToOneActive Boolean  @default(true) // Se true, operador pode chamar clientes no 1x1
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
