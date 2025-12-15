@@ -869,8 +869,10 @@ export interface ApiLog {
   endpoint: string;
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   statusCode: number;
-  ip: string;
-  date: string;
+  ip?: string;
+  ipAddress?: string;
+  date?: string;
+  createdAt?: string;
   requestPayload?: object;
   responsePayload?: object;
   userAgent?: string;

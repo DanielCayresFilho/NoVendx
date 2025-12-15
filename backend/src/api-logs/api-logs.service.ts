@@ -32,7 +32,16 @@ export class ApiLogsService {
     const whereClause: any = {};
 
     if (filters.endpoint) {
-      whereClause.endpoint = { contains: filters.endpoint, mode: 'insensitive' };
+      // Se o endpoint termina com *, remover o * e usar contains
+      // Isso vai pegar todos os endpoints que contêm o prefixo (ex: /api/messages vai pegar /api/messages/massivocpc)
+      const endpointFilter = filters.endpoint.endsWith('*') 
+        ? filters.endpoint.slice(0, -1) 
+        : filters.endpoint;
+      
+      whereClause.endpoint = { 
+        contains: endpointFilter, 
+        mode: 'insensitive' 
+      };
     }
 
     if (filters.method) {
@@ -53,13 +62,21 @@ export class ApiLogsService {
       }
     }
 
-    return this.prisma.apiLog.findMany({
+    const logs = await this.prisma.apiLog.findMany({
       where: whereClause,
       orderBy: {
         createdAt: 'desc',
       },
       take: 1000, // Limitar a 1000 registros por padrão
     });
+
+    // Se o endpoint termina com *, filtrar para garantir que começa com o prefixo
+    if (filters.endpoint && filters.endpoint.endsWith('*')) {
+      const prefix = filters.endpoint.slice(0, -1);
+      return logs.filter(log => log.endpoint.toLowerCase().startsWith(prefix.toLowerCase()));
+    }
+
+    return logs;
   }
 
   async findOne(id: number) {

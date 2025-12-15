@@ -57,29 +57,60 @@ export default function LogsAPI() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
+  // Data de hoje no formato YYYY-MM-DD
+  const getTodayDate = () => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  };
+
   const [filters, setFilters] = useState({
     endpoint: '',
-    method: '',
+    method: 'POST', // Fixo em POST
     statusCode: '',
-    startDate: '',
-    endDate: ''
+    startDate: getTodayDate(), // Data de hoje fixa
+    endDate: getTodayDate() // Data de hoje fixa
   });
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  const mapApiToLocal = (apiLog: ApiLog): LogEntry => ({
-    id: apiLog.id.toString(),
-    endpoint: apiLog.endpoint,
-    method: apiLog.method,
-    statusCode: apiLog.statusCode,
-    ip: apiLog.ip,
-    date: format(new Date(apiLog.date), 'yyyy-MM-dd HH:mm:ss'),
-    requestPayload: apiLog.requestPayload,
-    responsePayload: apiLog.responsePayload,
-    userAgent: apiLog.userAgent,
-  });
+  const mapApiToLocal = (apiLog: ApiLog): LogEntry => {
+    // Tentar formatar a data de forma segura
+    let formattedDate = '';
+    try {
+      if (apiLog.date) {
+        const dateObj = typeof apiLog.date === 'string' ? new Date(apiLog.date) : apiLog.date;
+        if (!isNaN(dateObj.getTime())) {
+          formattedDate = format(dateObj, 'yyyy-MM-dd HH:mm:ss');
+        } else {
+          formattedDate = String(apiLog.date);
+        }
+      } else if (apiLog.createdAt) {
+        const dateObj = typeof apiLog.createdAt === 'string' ? new Date(apiLog.createdAt) : apiLog.createdAt;
+        if (!isNaN(dateObj.getTime())) {
+          formattedDate = format(dateObj, 'yyyy-MM-dd HH:mm:ss');
+        } else {
+          formattedDate = String(apiLog.createdAt);
+        }
+      }
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      formattedDate = String(apiLog.date || apiLog.createdAt || '');
+    }
+
+    return {
+      id: apiLog.id.toString(),
+      endpoint: apiLog.endpoint,
+      method: apiLog.method,
+      statusCode: apiLog.statusCode,
+      ip: apiLog.ip || apiLog.ipAddress || '',
+      date: formattedDate,
+      requestPayload: apiLog.requestPayload,
+      responsePayload: apiLog.responsePayload,
+      userAgent: apiLog.userAgent,
+    };
+  };
 
   const loadLogs = useCallback(async (searchParams?: {
     endpoint?: string;
@@ -103,7 +134,14 @@ export default function LogsAPI() {
   useEffect(() => {
     const init = async () => {
       setIsLoading(true);
-      await loadLogs();
+      // Carregar automaticamente com filtros: POST, endpoint /api/messages/*, data de hoje
+      const today = getTodayDate();
+      await loadLogs({
+        method: 'POST',
+        endpoint: '/api/messages*',
+        startDate: `${today}T00:00:00.000Z`,
+        endDate: `${today}T23:59:59.999Z`,
+      });
       setIsLoading(false);
     };
     init();
@@ -112,46 +150,50 @@ export default function LogsAPI() {
   const handleSearch = async () => {
     setIsSearching(true);
     try {
+      const today = getTodayDate();
       const params: {
         endpoint?: string;
         method?: string;
         statusCode?: number;
         startDate?: string;
         endDate?: string;
-      } = {};
+      } = {
+        method: 'POST', // Sempre POST
+        endpoint: '/api/messages*', // Sempre endpoint de messages (com * para pegar todos)
+        startDate: `${today}T00:00:00.000Z`,
+        endDate: `${today}T23:59:59.999Z`,
+      };
 
-      if (filters.endpoint.trim()) {
-        params.endpoint = filters.endpoint.trim();
-      }
-      if (filters.method && filters.method !== 'all') {
-        params.method = filters.method;
-      }
       if (filters.statusCode.trim()) {
-        params.statusCode = parseInt(filters.statusCode);
-      }
-      if (filters.startDate) {
-        params.startDate = filters.startDate;
-      }
-      if (filters.endDate) {
-        params.endDate = filters.endDate;
+        const statusCode = parseInt(filters.statusCode);
+        if (!isNaN(statusCode)) {
+          params.statusCode = statusCode;
+        }
       }
 
-      await loadLogs(Object.keys(params).length > 0 ? params : undefined);
+      await loadLogs(params);
     } finally {
       setIsSearching(false);
     }
   };
 
   const handleClearFilters = async () => {
+    const today = getTodayDate();
     setFilters({
       endpoint: '',
-      method: '',
+      method: 'POST',
       statusCode: '',
-      startDate: '',
-      endDate: ''
+      startDate: today,
+      endDate: today
     });
     setIsSearching(true);
-    await loadLogs();
+    const todayISO = getTodayDate();
+    await loadLogs({
+      method: 'POST',
+      endpoint: '/api/messages*',
+      startDate: `${todayISO}T00:00:00.000Z`,
+      endDate: `${todayISO}T23:59:59.999Z`,
+    });
     setIsSearching(false);
   };
 
@@ -229,31 +271,7 @@ export default function LogsAPI() {
         <GlassCard>
           <h2 className="text-xl font-semibold text-foreground mb-6">Logs de API</h2>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-4">
-            <div className="space-y-2">
-              <Label htmlFor="endpoint">Endpoint</Label>
-              <Input
-                id="endpoint"
-                value={filters.endpoint}
-                onChange={(e) => setFilters({ ...filters, endpoint: e.target.value })}
-                placeholder="/api/..."
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="method">Método</Label>
-              <Select value={filters.method} onValueChange={(value) => setFilters({ ...filters, method: value })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Todos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="GET">GET</SelectItem>
-                  <SelectItem value="POST">POST</SelectItem>
-                  <SelectItem value="PATCH">PATCH</SelectItem>
-                  <SelectItem value="DELETE">DELETE</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-4">
             <div className="space-y-2">
               <Label htmlFor="statusCode">Status Code</Label>
               <Input
@@ -264,21 +282,13 @@ export default function LogsAPI() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="startDate">Data Inicial</Label>
+              <Label htmlFor="startDate">Data (Hoje)</Label>
               <Input
                 id="startDate"
                 type="date"
                 value={filters.startDate}
-                onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="endDate">Data Final</Label>
-              <Input
-                id="endDate"
-                type="date"
-                value={filters.endDate}
-                onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+                disabled
+                className="bg-muted"
               />
             </div>
             <div className="flex items-end gap-2">
@@ -293,6 +303,14 @@ export default function LogsAPI() {
               <Button variant="outline" size="icon" onClick={handleClearFilters} disabled={isSearching}>
                 <RotateCcw className="h-4 w-4" />
               </Button>
+            </div>
+            <div className="space-y-2">
+              <Label>Filtros Ativos</Label>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline">POST</Badge>
+                <Badge variant="outline">/api/messages/*</Badge>
+                <Badge variant="outline">Hoje</Badge>
+              </div>
             </div>
           </div>
         </GlassCard>
