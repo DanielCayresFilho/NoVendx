@@ -160,9 +160,13 @@ export class UsersService {
       const stream = Readable.from(file.buffer.toString('utf-8'));
       
       stream
-        .pipe(csv({ separator: ';', skipEmptyLines: true, skipLinesWithError: true }))
+        .pipe(csv({ separator: ';' }))
         .on('data', (data) => {
-          results.push(data);
+          // Filtrar linhas vazias manualmente
+          const hasData = Object.values(data).some(value => value && String(value).trim() !== '');
+          if (hasData) {
+            results.push(data);
+          }
         })
         .on('end', async () => {
           console.log(`📊 Processando ${results.length} linhas do CSV`);
