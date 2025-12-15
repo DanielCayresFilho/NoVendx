@@ -1087,7 +1087,7 @@ export class ReportsService {
 
   /**
    * RELATÓRIO DE LINHAS
-   * Estrutura: id, Número, Data de Transferência, Blindado, Carteira
+   * Estrutura: id, Número, Status, Segmento, Operador Vinculado, Data de Criação
    */
   async getLinhasReport(filters: ReportFilterDto) {
     const whereClause: any = {};
@@ -1104,15 +1104,32 @@ export class ReportsService {
     const segments = await this.prisma.segment.findMany();
     const segmentMap = new Map(segments.map(s => [s.id, s]));
 
+    // Buscar todos os usuários que têm linhas vinculadas
+    const userIds = lines.filter(l => l.linkedTo).map(l => l.linkedTo!);
+    const users = await this.prisma.user.findMany({
+      where: {
+        id: { in: userIds },
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+      },
+    });
+    const userMap = new Map(users.map(u => [u.id, u]));
+
     const result = lines.map(line => {
       const segment = line.segment ? segmentMap.get(line.segment) : null;
+      const operador = line.linkedTo ? userMap.get(line.linkedTo) : null;
 
       return {
         id: line.id,
         Número: line.phone,
-        'Data de Transferência': this.formatDate(line.createdAt),
-        Blindado: line.lineStatus === 'ban' ? 'Sim' : 'Não',
-        Carteira: segment?.name || null,
+        Status: line.lineStatus === 'ban' ? 'Banida' : line.lineStatus === 'active' ? 'Ativa' : line.lineStatus || 'Desconhecido',
+        Segmento: segment?.name || 'Sem segmento',
+        'Operador Vinculado': operador ? `${operador.name} (${operador.email})` : 'Sem operador',
+        'Data de Criação': this.formatDate(line.createdAt),
+        'Data de Atualização': this.formatDate(line.updatedAt),
       };
     });
 
