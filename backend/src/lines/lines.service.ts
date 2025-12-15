@@ -1,12 +1,17 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { CreateLineDto } from './dto/create-line.dto';
 import { UpdateLineDto } from './dto/update-line.dto';
+import { WebsocketGateway } from '../websocket/websocket.gateway';
 import axios from 'axios';
 
 @Injectable()
 export class LinesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Inject(forwardRef(() => WebsocketGateway))
+    private websocketGateway: WebsocketGateway,
+  ) {}
 
   async create(createLineDto: CreateLineDto) {
     console.log('📝 Dados recebidos no service:', JSON.stringify(createLineDto, null, 2));
@@ -189,9 +194,16 @@ export class LinesService {
       }
 
       // Criar linha no banco
-      return this.prisma.linesStock.create({
+      const newLine = await this.prisma.linesStock.create({
         data: createLineDto,
       });
+
+      // Tentar vincular automaticamente a um operador online sem linha do mesmo segmento
+      if (newLine.segment) {
+        await this.tryAssignLineToOperator(newLine.id, newLine.segment);
+      }
+
+      return newLine;
     } catch (error) {
       console.error('❌ Erro ao criar linha (detalhado):', {
         message: error.message,
@@ -538,6 +550,51 @@ export class LinesService {
     } catch (error) {
       console.error('Erro ao buscar instâncias:', error.response?.data || error.message);
       throw new BadRequestException('Erro ao buscar instâncias da Evolution API');
+    }
+  }
+
+  // Tentar vincular linha automaticamente a um operador online sem linha do mesmo segmento
+  private async tryAssignLineToOperator(lineId: number, segment: number) {
+    try {
+      // Buscar operador online sem linha do mesmo segmento
+      const onlineOperatorWithoutLine = await this.prisma.user.findFirst({
+        where: {
+          role: 'operator',
+          status: 'Online',
+          segment: segment,
+          line: null, // Sem linha atribuída
+        },
+      });
+
+      if (onlineOperatorWithoutLine) {
+        // Vincular linha ao operador
+        await this.prisma.user.update({
+          where: { id: onlineOperatorWithoutLine.id },
+          data: { line: lineId },
+        });
+
+        await this.prisma.linesStock.update({
+          where: { id: lineId },
+          data: { linkedTo: onlineOperatorWithoutLine.id },
+        });
+
+        // Notificar operador via WebSocket
+        if (this.websocketGateway) {
+          const line = await this.findOne(lineId);
+          this.websocketGateway.emitToUser(onlineOperatorWithoutLine.id, 'line-assigned', {
+            lineId: lineId,
+            linePhone: line.phone,
+            message: `Você foi vinculado à linha ${line.phone} automaticamente.`,
+          });
+        }
+
+        console.log(`✅ [LinesService] Linha ${lineId} vinculada automaticamente ao operador ${onlineOperatorWithoutLine.name} (segmento ${segment})`);
+      } else {
+        console.log(`ℹ️ [LinesService] Nenhum operador online sem linha encontrado no segmento ${segment} para vincular a linha ${lineId}`);
+      }
+    } catch (error) {
+      console.error('❌ [LinesService] Erro ao tentar vincular linha automaticamente:', error);
+      // Não lançar erro, apenas logar - a linha foi criada com sucesso
     }
   }
 }

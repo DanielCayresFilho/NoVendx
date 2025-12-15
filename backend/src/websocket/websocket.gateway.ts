@@ -74,20 +74,27 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
       console.log(`✅ Usuário ${user.name} (${user.role}) conectado via WebSocket`);
 
-      // Se for operador sem linha, verificar se há linha disponível para vincular
+      // Se for operador sem linha, verificar se há linha disponível para vincular (do mesmo segmento)
       if (user.role === 'operator' && !user.line) {
-        // Buscar todas as linhas ativas
-        const allActiveLines = await this.prisma.linesStock.findMany({
-          where: {
-            lineStatus: 'active',
-          },
+        // Buscar linhas ativas do mesmo segmento do operador
+        const whereClause: any = {
+          lineStatus: 'active',
+        };
+
+        // Se o operador tem segmento, filtrar por segmento
+        if (user.segment) {
+          whereClause.segment = user.segment;
+        }
+
+        const availableLines = await this.prisma.linesStock.findMany({
+          where: whereClause,
         });
 
         // Verificar quais linhas não têm usuário vinculado
         const linesWithUsers = await this.prisma.user.findMany({
           where: {
             line: {
-              in: allActiveLines.map(l => l.id),
+              in: availableLines.map(l => l.id),
             },
           },
           select: {
@@ -96,7 +103,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         });
 
         const usedLineIds = new Set(linesWithUsers.map(u => u.line).filter(Boolean));
-        const availableLine = allActiveLines.find(line => !usedLineIds.has(line.id));
+        const availableLine = availableLines.find(line => !usedLineIds.has(line.id) && !line.linkedTo);
 
         if (availableLine) {
           // Vincular linha ao operador
@@ -105,15 +112,21 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
             data: { line: availableLine.id },
           });
 
+          await this.prisma.linesStock.update({
+            where: { id: availableLine.id },
+            data: { linkedTo: user.id },
+          });
+
           // Atualizar user object
           user.line = availableLine.id;
 
-          console.log(`✅ [WebSocket] Linha ${availableLine.phone} vinculada automaticamente ao operador ${user.name}`);
+          console.log(`✅ [WebSocket] Linha ${availableLine.phone} vinculada automaticamente ao operador ${user.name} (segmento ${user.segment || 'sem segmento'})`);
           
           // Notificar o operador
           client.emit('line-assigned', {
             lineId: availableLine.id,
             linePhone: availableLine.phone,
+            message: `Você foi vinculado à linha ${availableLine.phone} automaticamente.`,
           });
         }
       }
