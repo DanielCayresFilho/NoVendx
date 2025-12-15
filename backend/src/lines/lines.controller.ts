@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('lines')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -14,9 +15,9 @@ export class LinesController {
 
   @Post()
   @Roles(Role.admin, Role.ativador)
-  create(@Body() createLineDto: CreateLineDto) {
+  create(@Body() createLineDto: CreateLineDto, @CurrentUser() user: any) {
     console.log('📝 Dados recebidos para criar linha:', createLineDto);
-    return this.linesService.create(createLineDto);
+    return this.linesService.create(createLineDto, user.id);
   }
 
   @Get()
@@ -68,6 +69,12 @@ export class LinesController {
   @Roles(Role.admin)
   getAvailable(@Param('segment') segment: string) {
     return this.linesService.getAvailableLines(+segment);
+  }
+
+  @Get('activators-productivity')
+  @Roles(Role.admin, Role.supervisor)
+  getActivatorsProductivity() {
+    return this.linesService.getActivatorsProductivity();
   }
 
   @Get(':id')

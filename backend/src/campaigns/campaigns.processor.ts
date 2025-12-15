@@ -134,6 +134,44 @@ export class CampaignsProcessor {
 
           sent = true;
 
+          // Buscar operadores da linha e distribuir (máximo 2)
+          const lineOperators = await this.prisma.lineOperator.findMany({
+            where: { lineId },
+            include: {
+              user: {
+                where: {
+                  status: 'Online',
+                  role: 'operator',
+                },
+              },
+            },
+          });
+
+          const onlineOperators = lineOperators
+            .filter(lo => lo.user.status === 'Online')
+            .map(lo => lo.user);
+
+          // Se não houver operadores online, usar null (sistema)
+          let assignedOperatorId: number | null = null;
+          if (onlineOperators.length > 0) {
+            // Distribuir de forma round-robin: contar conversas ativas de cada operador
+            const operatorConversationCounts = await Promise.all(
+              onlineOperators.map(async (operator) => {
+                const count = await this.prisma.conversation.count({
+                  where: {
+                    userLine: lineId,
+                    userId: operator.id,
+                    tabulation: null,
+                  },
+                });
+                return { operatorId: operator.id, count };
+              })
+            );
+
+            operatorConversationCounts.sort((a, b) => a.count - b.count);
+            assignedOperatorId = operatorConversationCounts[0]?.operatorId || onlineOperators[0]?.id || null;
+          }
+
           // Registrar conversa
           await this.conversationsService.create({
             contactName,
@@ -141,6 +179,7 @@ export class CampaignsProcessor {
             segment: contactSegment,
             userName: 'Sistema',
             userLine: lineId,
+            userId: assignedOperatorId, // Operador específico que vai receber a resposta
             message: useTemplate ? `[TEMPLATE] ${finalMessage}` : finalMessage,
             sender: 'operator',
             messageType: useTemplate ? 'template' : 'text',

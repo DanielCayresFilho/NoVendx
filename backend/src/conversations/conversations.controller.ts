@@ -28,8 +28,9 @@ export class ConversationsController {
 
     // Aplicar filtros baseados no papel do usuário
     if (user.role === Role.operator && user.line) {
-      // Operador só vê conversas da sua linha
+      // Operador só vê conversas da sua linha E do seu userId específico
       where.userLine = user.line;
+      where.userId = user.id; // Filtrar apenas conversas atribuídas a ele
     } else if (user.role === Role.supervisor && user.segment) {
       // Supervisor só vê conversas do seu segmento
       where.segment = user.segment;
@@ -56,8 +57,8 @@ export class ConversationsController {
     if (!user.line) {
       return [];
     }
-    // Filtrar por linha e pelo operador (apenas mensagens dele ou do contato)
-    return this.conversationsService.findActiveConversations(user.line, user.name);
+    // Filtrar por linha e pelo operador específico (userId)
+    return this.conversationsService.findActiveConversations(user.line, user.id);
   }
 
   @Get('segment/:segment')

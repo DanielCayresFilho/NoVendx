@@ -277,6 +277,19 @@ export const linesService = {
     return apiRequest('/lines/evolutions');
   },
 
+  getActivatorsProductivity: async (): Promise<Array<{
+    id: number;
+    name: string;
+    email: string;
+    totalLines: number;
+    activeLines: number;
+    bannedLines: number;
+    linesByMonth: Record<string, number>;
+    createdAt: string;
+  }>> => {
+    return apiRequest('/lines/activators-productivity');
+  },
+
   getInstances: async (evolutionName: string): Promise<Array<{ instanceName: string; status: string }>> => {
     return apiRequest(`/lines/instances/${evolutionName}`);
   },

@@ -25,6 +25,7 @@ import Tags from "./pages/Tags";
 import LogsAPI from "./pages/LogsAPI";
 import Templates from "./pages/Templates";
 import PainelControle from "./pages/PainelControle";
+import ProdutividadeAtivadores from "./pages/ProdutividadeAtivadores";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -69,6 +70,7 @@ function AppRoutes() {
       <Route path="/logs" element={<ProtectedRoute><LogsAPI /></ProtectedRoute>} />
       <Route path="/templates" element={<ProtectedRoute><Templates /></ProtectedRoute>} />
       <Route path="/painel-controle" element={<ProtectedRoute><PainelControle /></ProtectedRoute>} />
+      <Route path="/produtividade-ativadores" element={<ProtectedRoute><ProdutividadeAtivadores /></ProtectedRoute>} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

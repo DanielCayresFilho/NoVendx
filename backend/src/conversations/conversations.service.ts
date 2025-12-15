@@ -59,7 +59,7 @@ export class ConversationsService {
     });
   }
 
-  async findActiveConversations(userLine?: number, userName?: string) {
+  async findActiveConversations(userLine?: number, userId?: number) {
     const where: any = {
       tabulation: null,
     };
@@ -68,12 +68,9 @@ export class ConversationsService {
       where.userLine = userLine;
     }
 
-    // Se for operador, garantir que só veja suas próprias mensagens (sender=contact ou userName do operador)
-    if (userName) {
-      where.OR = [
-        { sender: 'contact' },
-        { userName },
-      ];
+    // Se for operador, garantir que só veja suas próprias conversas (userId específico)
+    if (userId) {
+      where.userId = userId;
     }
 
     // Retornar TODAS as mensagens não tabuladas (o frontend vai agrupar)

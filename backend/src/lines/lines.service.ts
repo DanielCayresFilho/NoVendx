@@ -13,7 +13,7 @@ export class LinesService {
     private websocketGateway: WebsocketGateway,
   ) {}
 
-  async create(createLineDto: CreateLineDto) {
+  async create(createLineDto: CreateLineDto, createdBy?: number) {
     console.log('📝 Dados recebidos no service:', JSON.stringify(createLineDto, null, 2));
 
     // Limpar strings vazias e converter para null
@@ -195,7 +195,10 @@ export class LinesService {
 
       // Criar linha no banco
       const newLine = await this.prisma.linesStock.create({
-        data: createLineDto,
+        data: {
+          ...createLineDto,
+          createdBy, // Salvar quem criou a linha
+        },
       });
 
       // Tentar vincular automaticamente a um operador online sem linha do mesmo segmento
@@ -553,43 +556,252 @@ export class LinesService {
     }
   }
 
-  // Tentar vincular linha automaticamente a um operador online sem linha do mesmo segmento
+  // Distribuir mensagem inbound entre os operadores da linha (máximo 2)
+  // Retorna o ID do operador que deve receber a mensagem
+  async assignInboundMessageToOperator(lineId: number, contactPhone: string): Promise<number | null> {
+    // Buscar operadores vinculados à linha
+    const lineOperators = await this.prisma.lineOperator.findMany({
+      where: { lineId },
+      include: {
+        user: true,
+      },
+    });
+
+    // Filtrar apenas operadores online
+    const onlineOperators = lineOperators
+      .filter(lo => lo.user.status === 'Online' && lo.user.role === 'operator')
+      .map(lo => lo.user);
+
+    if (onlineOperators.length === 0) {
+      console.log(`⚠️ [LinesService] Nenhum operador online na linha ${lineId}`);
+      return null;
+    }
+
+    // Verificar se já existe conversa ativa com algum operador específico
+    const existingConversation = await this.prisma.conversation.findFirst({
+      where: {
+        contactPhone,
+        userLine: lineId,
+        tabulation: null, // Conversa não tabulada (ativa)
+        userId: { in: onlineOperators.map(op => op.id) },
+      },
+      orderBy: {
+        datetime: 'desc',
+      },
+    });
+
+    // Se já existe conversa ativa, atribuir ao mesmo operador
+    if (existingConversation && existingConversation.userId) {
+      console.log(`✅ [LinesService] Mensagem atribuída ao operador existente: ${existingConversation.userId}`);
+      return existingConversation.userId;
+    }
+
+    // Distribuir de forma round-robin: contar conversas ativas de cada operador
+    const operatorConversationCounts = await Promise.all(
+      onlineOperators.map(async (operator) => {
+        const count = await this.prisma.conversation.count({
+          where: {
+            userLine: lineId,
+            userId: operator.id,
+            tabulation: null, // Apenas conversas ativas
+          },
+        });
+        return { operatorId: operator.id, count };
+      })
+    );
+
+    // Ordenar por menor número de conversas (balanceamento)
+    operatorConversationCounts.sort((a, b) => a.count - b.count);
+
+    // Retornar o operador com menos conversas
+    const selectedOperatorId = operatorConversationCounts[0]?.operatorId || onlineOperators[0]?.id;
+    console.log(`✅ [LinesService] Mensagem atribuída ao operador ${selectedOperatorId} (${operatorConversationCounts[0]?.count || 0} conversas ativas)`);
+    
+    return selectedOperatorId || null;
+  }
+
+  // Vincular operador à linha (máximo 2 operadores por linha)
+  async assignOperatorToLine(lineId: number, userId: number): Promise<void> {
+    // Verificar se a linha já tem 2 operadores
+    const currentOperators = await this.prisma.lineOperator.count({
+      where: { lineId },
+    });
+
+    if (currentOperators >= 2) {
+      throw new BadRequestException('Linha já possui o máximo de 2 operadores vinculados');
+    }
+
+    // Verificar se o operador já está vinculado a esta linha
+    const existing = await this.prisma.lineOperator.findUnique({
+      where: {
+        lineId_userId: {
+          lineId,
+          userId,
+        },
+      },
+    });
+
+    if (existing) {
+      throw new BadRequestException('Operador já está vinculado a esta linha');
+    }
+
+    // Criar vínculo
+    await this.prisma.lineOperator.create({
+      data: {
+        lineId,
+        userId,
+      },
+    });
+
+    // Atualizar campo legacy para compatibilidade
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { line: lineId },
+    });
+
+    await this.prisma.linesStock.update({
+      where: { id: lineId },
+      data: { linkedTo: userId }, // Manter primeiro operador no campo legacy
+    });
+
+    console.log(`✅ Operador ${userId} vinculado à linha ${lineId}`);
+  }
+
+  // Desvincular operador da linha
+  async unassignOperatorFromLine(lineId: number, userId: number): Promise<void> {
+    await this.prisma.lineOperator.deleteMany({
+      where: {
+        lineId,
+        userId,
+      },
+    });
+
+    // Atualizar campo legacy
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { line: null },
+    });
+
+    // Se era o primeiro operador (linkedTo), atualizar para o próximo
+    const line = await this.prisma.linesStock.findUnique({
+      where: { id: lineId },
+    });
+
+    if (line && line.linkedTo === userId) {
+      const remainingOperator = await this.prisma.lineOperator.findFirst({
+        where: { lineId },
+      });
+
+      await this.prisma.linesStock.update({
+        where: { id: lineId },
+        data: { linkedTo: remainingOperator?.userId || null },
+      });
+    }
+
+    console.log(`✅ Operador ${userId} desvinculado da linha ${lineId}`);
+  }
+
+  // Relatório de produtividade dos ativadores
+  async getActivatorsProductivity() {
+    const activators = await this.prisma.user.findMany({
+      where: {
+        role: 'ativador',
+      },
+      include: {
+        createdLines: {
+          select: {
+            id: true,
+            phone: true,
+            lineStatus: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+
+    const productivity = activators.map(activator => {
+      const totalLines = activator.createdLines.length;
+      const activeLines = activator.createdLines.filter(l => l.lineStatus === 'active').length;
+      const bannedLines = activator.createdLines.filter(l => l.lineStatus === 'ban').length;
+
+      // Agrupar por mês
+      const linesByMonth = activator.createdLines.reduce((acc, line) => {
+        const month = new Date(line.createdAt).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
+        acc[month] = (acc[month] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      return {
+        id: activator.id,
+        name: activator.name,
+        email: activator.email,
+        totalLines,
+        activeLines,
+        bannedLines,
+        linesByMonth,
+        createdAt: activator.createdAt,
+      };
+    });
+
+    return productivity.sort((a, b) => b.totalLines - a.totalLines); // Ordenar por total de linhas (maior primeiro)
+  }
+
+  // Tentar vincular linha automaticamente a operadores online sem linha do mesmo segmento (máximo 2)
   private async tryAssignLineToOperator(lineId: number, segment: number) {
     try {
       // Buscar operador online sem linha do mesmo segmento
-      const onlineOperatorWithoutLine = await this.prisma.user.findFirst({
+      // Verificar quantos operadores já estão vinculados
+      const currentOperatorsCount = await this.prisma.lineOperator.count({
+        where: { lineId },
+      });
+
+      if (currentOperatorsCount >= 2) {
+        console.log(`ℹ️ [LinesService] Linha ${lineId} já possui 2 operadores vinculados`);
+        return;
+      }
+
+      // Buscar operadores online sem linha do mesmo segmento
+      // Primeiro, buscar todos os operadores online do segmento
+      const allOnlineOperators = await this.prisma.user.findMany({
         where: {
           role: 'operator',
           status: 'Online',
           segment: segment,
-          line: null, // Sem linha atribuída
         },
       });
 
-      if (onlineOperatorWithoutLine) {
-        // Vincular linha ao operador
-        await this.prisma.user.update({
-          where: { id: onlineOperatorWithoutLine.id },
-          data: { line: lineId },
+      // Filtrar apenas os que não têm vínculo com nenhuma linha
+      const operatorsWithoutLine = [];
+      for (const operator of allOnlineOperators) {
+        const hasLine = await this.prisma.lineOperator.findFirst({
+          where: { userId: operator.id },
         });
-
-        await this.prisma.linesStock.update({
-          where: { id: lineId },
-          data: { linkedTo: onlineOperatorWithoutLine.id },
-        });
-
-        // Notificar operador via WebSocket
-        if (this.websocketGateway) {
-          const line = await this.findOne(lineId);
-          this.websocketGateway.emitToUser(onlineOperatorWithoutLine.id, 'line-assigned', {
-            lineId: lineId,
-            linePhone: line.phone,
-            message: `Você foi vinculado à linha ${line.phone} automaticamente.`,
-          });
+        if (!hasLine && operatorsWithoutLine.length < (2 - currentOperatorsCount)) {
+          operatorsWithoutLine.push(operator);
         }
+      }
 
-        console.log(`✅ [LinesService] Linha ${lineId} vinculada automaticamente ao operador ${onlineOperatorWithoutLine.name} (segmento ${segment})`);
-      } else {
+      for (const operator of operatorsWithoutLine) {
+        try {
+          await this.assignOperatorToLine(lineId, operator.id);
+
+          // Notificar operador via WebSocket
+          if (this.websocketGateway) {
+            const line = await this.findOne(lineId);
+            this.websocketGateway.emitToUser(operator.id, 'line-assigned', {
+              lineId: lineId,
+              linePhone: line.phone,
+              message: `Você foi vinculado à linha ${line.phone} automaticamente.`,
+            });
+          }
+
+          console.log(`✅ [LinesService] Linha ${lineId} vinculada automaticamente ao operador ${operator.name} (segmento ${segment})`);
+        } catch (error) {
+          console.error(`❌ [LinesService] Erro ao vincular operador ${operator.id} à linha ${lineId}:`, error.message);
+        }
+      }
+
+      if (operatorsWithoutLine.length === 0) {
         console.log(`ℹ️ [LinesService] Nenhum operador online sem linha encontrado no segmento ${segment} para vincular a linha ${lineId}`);
       }
     } catch (error) {

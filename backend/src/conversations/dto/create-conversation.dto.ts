@@ -22,6 +22,10 @@ export class CreateConversationDto {
   @IsOptional()
   userLine?: number;
 
+  @IsNumber()
+  @IsOptional()
+  userId?: number; // ID do operador específico que está atendendo
+
   @IsString()
   @IsNotEmpty()
   message: string;

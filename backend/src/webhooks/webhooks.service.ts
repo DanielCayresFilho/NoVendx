@@ -183,6 +183,10 @@ export class WebhooksService {
           console.log('✅ Contato adicionado à blocklist:', from);
         }
 
+        // Distribuir mensagem entre os operadores da linha (máximo 2)
+        const assignedOperatorId = await this.linesService.assignInboundMessageToOperator(line.id, from);
+        console.log(`📋 [Webhook] Mensagem de ${from} atribuída ao operador ${assignedOperatorId || 'nenhum (sem operadores online)'}`);
+
         // Criar conversa
         const conversation = await this.conversationsService.create({
           contactName: contact.name,
@@ -190,6 +194,7 @@ export class WebhooksService {
           segment: line.segment,
           userName: null,
           userLine: line.id,
+          userId: assignedOperatorId, // Operador específico que vai atender
           message: messageText,
           sender: 'contact',
           messageType,
@@ -246,38 +251,107 @@ export class WebhooksService {
           });
 
           if (line) {
-            // Verificar se linha já tem usuário vinculado
-            const userWithLine = await this.prisma.user.findFirst({
-              where: {
-                line: line.id,
-              },
+            // Verificar quantos operadores já estão vinculados à linha
+            const currentOperatorsCount = await this.prisma.lineOperator.count({
+              where: { lineId: line.id },
             });
 
-            if (!userWithLine) {
-              // Linha conectada mas sem vínculo - procurar operador online sem linha
-              const operatorWithoutLine = await this.prisma.user.findFirst({
-                where: {
-                  role: 'operator',
-                  line: null,
-                  status: 'Online',
-                },
+            if (currentOperatorsCount < 2) {
+              // Verificar se a linha é padrão (segmento "Padrão")
+              const defaultSegment = await this.prisma.segment.findUnique({
+                where: { name: 'Padrão' },
               });
 
+              const isDefaultLine = defaultSegment && line.segment === defaultSegment.id;
+
+              let operatorWithoutLine = null;
+
+              if (isDefaultLine) {
+                // Linha padrão: buscar qualquer operador online sem linha
+                const allOnlineOperators = await this.prisma.user.findMany({
+                  where: {
+                    role: 'operator',
+                    status: 'Online',
+                  },
+                });
+
+                // Filtrar apenas os que não têm vínculo com nenhuma linha
+                for (const operator of allOnlineOperators) {
+                  const hasLine = await this.prisma.lineOperator.findFirst({
+                    where: { userId: operator.id },
+                  });
+                  if (!hasLine && operator.segment) {
+                    operatorWithoutLine = operator;
+                    break; // Pegar o primeiro disponível com segmento
+                  }
+                }
+
+                // Se encontrou operador, atualizar segmento da linha para o do operador
+                if (operatorWithoutLine && operatorWithoutLine.segment) {
+                  await this.prisma.linesStock.update({
+                    where: { id: line.id },
+                    data: { segment: operatorWithoutLine.segment },
+                  });
+                  console.log(`🔄 [Webhook] Linha padrão ${line.phone} atualizada para o segmento ${operatorWithoutLine.segment} do operador ${operatorWithoutLine.name}`);
+                }
+              } else {
+                // Linha normal: buscar operador do mesmo segmento
+                const allOnlineOperators = await this.prisma.user.findMany({
+                  where: {
+                    role: 'operator',
+                    status: 'Online',
+                    segment: line.segment,
+                  },
+                });
+
+                // Filtrar apenas os que não têm vínculo com nenhuma linha
+                for (const operator of allOnlineOperators) {
+                  const hasLine = await this.prisma.lineOperator.findFirst({
+                    where: { userId: operator.id },
+                  });
+                  if (!hasLine) {
+                    operatorWithoutLine = operator;
+                    break; // Pegar o primeiro disponível
+                  }
+                }
+              }
+
               if (operatorWithoutLine) {
-                // Vincular linha ao operador
+                // Vincular operador à linha usando a nova tabela
+                await this.prisma.lineOperator.create({
+                  data: {
+                    lineId: line.id,
+                    userId: operatorWithoutLine.id,
+                  },
+                });
+
+                // Atualizar campos legacy para compatibilidade
                 await this.prisma.user.update({
                   where: { id: operatorWithoutLine.id },
                   data: { line: line.id },
                 });
 
-                console.log(`✅ [Webhook] Linha ${line.phone} vinculada automaticamente ao operador ${operatorWithoutLine.name}`);
+                if (currentOperatorsCount === 0) {
+                  // Primeiro operador - atualizar linkedTo
+                  await this.prisma.linesStock.update({
+                    where: { id: line.id },
+                    data: { linkedTo: operatorWithoutLine.id },
+                  });
+                }
+
+                console.log(`✅ [Webhook] Linha ${line.phone} vinculada automaticamente ao operador ${operatorWithoutLine.name} (segmento ${line.segment || 'sem segmento'})`);
                 
                 // Notificar via WebSocket
                 this.websocketGateway.emitToUser(operatorWithoutLine.id, 'line-assigned', {
                   lineId: line.id,
                   linePhone: line.phone,
+                  message: `Você foi vinculado à linha ${line.phone} automaticamente.`,
                 });
+              } else {
+                console.log(`ℹ️ [Webhook] Linha ${line.phone} conectada, mas nenhum operador online sem linha encontrado${isDefaultLine ? '' : ` no segmento ${line.segment || 'sem segmento'}`}`);
               }
+            } else {
+              console.log(`ℹ️ [Webhook] Linha ${line.phone} já possui 2 operadores vinculados`);
             }
           }
 

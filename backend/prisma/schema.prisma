@@ -44,11 +44,14 @@ model User {
   password       String
   role           Role
   segment        Int?
-  line           Int?
+  line           Int? // Mantido para compatibilidade (deprecated - usar LineOperators)
   status         Status   @default(Offline)
   oneToOneActive Boolean  @default(true) // Se true, operador pode chamar clientes no 1x1
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  lineOperators LineOperator[] // Relacionamento com linhas
+  createdLines  LinesStock[] // Linhas criadas por este usuário (para ativadores)
 
   @@index([email])
   @@index([segment])
@@ -135,21 +138,42 @@ model LinesStock {
   phone         String     @unique
   lineStatus    LineStatus @default(active)
   segment       Int?
-  linkedTo      Int?
+  linkedTo      Int? // Mantido para compatibilidade (deprecated - usar LineOperators)
   evolutionName String
   oficial       Boolean    @default(false)
   token         String?
   businessID    String?
   numberId      String?
   receiveMedia  Boolean    @default(false) // Se true, ativa webhook_base64 para receber imagens/áudios/docs
+  createdBy     Int? // ID do usuário que criou a linha (para rastrear produtividade dos ativadores)
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
+
+  operators LineOperator[] // Relacionamento com operadores
+  creator   User?          @relation(fields: [createdBy], references: [id]) // Usuário que criou
 
   @@index([phone])
   @@index([lineStatus])
   @@index([segment])
   @@index([linkedTo])
   @@index([evolutionName])
+  @@index([createdBy])
+}
+
+// Tabela de relacionamento entre Linhas e Operadores (máximo 2 operadores por linha)
+model LineOperator {
+  id        Int      @id @default(autoincrement())
+  lineId    Int
+  userId    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  line LinesStock @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([lineId, userId])
+  @@index([lineId])
+  @@index([userId])
 }
 
 model Evolution {
@@ -169,7 +193,8 @@ model Conversation {
   contactPhone String
   segment      Int?
   userName     String?
-  userLine     Int?
+  userLine     Int? // ID da linha (mantido para compatibilidade)
+  userId       Int? // ID do operador específico que está atendendo
   message      String   @db.Text
   sender       Sender
   datetime     DateTime @default(now())
@@ -182,6 +207,7 @@ model Conversation {
   @@index([contactPhone])
   @@index([segment])
   @@index([userLine])
+  @@index([userId])
   @@index([tabulation])
   @@index([datetime])
 }
