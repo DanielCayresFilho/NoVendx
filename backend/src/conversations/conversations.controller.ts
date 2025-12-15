@@ -40,7 +40,12 @@ export class ConversationsController {
     if (user.role === 'supervisor') {
       return this.conversationsService.findAll({ segment: user.segment, tabulation: null });
     }
-    return this.conversationsService.findActiveConversations(user.line);
+    // Operador: se não tiver linha atribuída, não retorna nada
+    if (!user.line) {
+      return [];
+    }
+    // Filtrar por linha e pelo operador (apenas mensagens dele ou do contato)
+    return this.conversationsService.findActiveConversations(user.line, user.name);
   }
 
   @Get('segment/:segment')
