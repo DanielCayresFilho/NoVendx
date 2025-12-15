@@ -40,12 +40,19 @@ export class ConversationsService {
     });
   }
 
-  async findByContactPhone(contactPhone: string, tabulated: boolean = false) {
+  async findByContactPhone(contactPhone: string, tabulated: boolean = false, userLine?: number) {
+    const where: any = {
+      contactPhone,
+      tabulation: tabulated ? { not: null } : null,
+    };
+
+    // Se for operador, filtrar apenas conversas da sua linha
+    if (userLine) {
+      where.userLine = userLine;
+    }
+
     return this.prisma.conversation.findMany({
-      where: {
-        contactPhone,
-        tabulation: tabulated ? { not: null } : null,
-      },
+      where,
       orderBy: {
         datetime: 'asc',
       },

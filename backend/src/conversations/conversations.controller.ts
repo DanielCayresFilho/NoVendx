@@ -23,8 +23,20 @@ export class ConversationsController {
 
   @Get()
   @Roles(Role.admin, Role.supervisor, Role.operator)
-  findAll(@Query() filters: any) {
-    return this.conversationsService.findAll(filters);
+  findAll(@Query() filters: any, @CurrentUser() user: any) {
+    const where: any = { ...filters };
+
+    // Aplicar filtros baseados no papel do usuário
+    if (user.role === Role.operator && user.line) {
+      // Operador só vê conversas da sua linha
+      where.userLine = user.line;
+    } else if (user.role === Role.supervisor && user.segment) {
+      // Supervisor só vê conversas do seu segmento
+      where.segment = user.segment;
+    }
+    // Admin não tem filtro - vê todas as conversas
+
+    return this.conversationsService.findAll(where);
   }
 
   @Get('active')
@@ -32,12 +44,12 @@ export class ConversationsController {
   getActiveConversations(@CurrentUser() user: any) {
     console.log(`📋 [GET /conversations/active] Usuário: ${user.name} (${user.role}), line: ${user.line}, segment: ${user.segment}`);
     
-    // Admin e Supervisor podem ver todas as conversas ativas
-    // Operator só vê as conversas da sua linha
-    if (user.role === 'admin') {
+    // Admin vê TODAS as conversas ativas (sem filtro)
+    if (user.role === Role.admin) {
       return this.conversationsService.findAll({ tabulation: null });
     }
-    if (user.role === 'supervisor') {
+    // Supervisor vê apenas conversas ativas do seu segmento
+    if (user.role === Role.supervisor) {
       return this.conversationsService.findAll({ segment: user.segment, tabulation: null });
     }
     // Operador: se não tiver linha atribuída, não retorna nada
@@ -65,7 +77,18 @@ export class ConversationsController {
   getByContactPhone(
     @Param('phone') phone: string,
     @Query('tabulated') tabulated?: string,
+    @CurrentUser() user?: any,
   ) {
+    // Admin e Supervisor podem ver qualquer contato
+    // Operador só pode ver contatos da sua linha
+    if (user?.role === Role.operator && user?.line) {
+      // Verificar se o contato tem conversas na linha do operador
+      return this.conversationsService.findByContactPhone(
+        phone,
+        tabulated === 'true',
+        user.line, // Passar a linha como filtro adicional
+      );
+    }
     return this.conversationsService.findByContactPhone(
       phone,
       tabulated === 'true',
