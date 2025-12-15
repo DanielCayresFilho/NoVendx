@@ -71,13 +71,15 @@ export default function Campanhas() {
     message: string;
     useTemplate: boolean;
     templateId: string;
+    endTime: string;
   }>({
     name: '',
     segment: '',
     speed: 'medium',
     message: '',
     useTemplate: false,
-    templateId: ''
+    templateId: '',
+    endTime: '19:00'
   });
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -190,6 +192,7 @@ export default function Campanhas() {
         segment: formData.segment,
         useTemplate: formData.useTemplate,
         templateId: formData.useTemplate && formData.templateId ? parseInt(formData.templateId) : undefined,
+        endTime: formData.endTime || undefined,
       });
 
       // Upload CSV if provided
@@ -222,7 +225,8 @@ export default function Campanhas() {
         speed: 'medium',
         message: '',
         useTemplate: false,
-        templateId: ''
+        templateId: '',
+        endTime: '19:00'
       });
       setCsvFile(null);
       if (fileInputRef.current) {
@@ -316,6 +320,19 @@ export default function Campanhas() {
                     <SelectItem value="slow">Lenta (10min entre envios)</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="endTime">Horário Limite de Envio</Label>
+                <Input
+                  id="endTime"
+                  type="time"
+                  value={formData.endTime}
+                  onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
+                  placeholder="19:00"
+                />
+                <p className="text-xs text-muted-foreground">
+                  As mensagens serão distribuídas uniformemente até este horário
+                </p>
               </div>
             </div>
 

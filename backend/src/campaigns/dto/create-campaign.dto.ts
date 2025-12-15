@@ -49,4 +49,8 @@ export class CreateCampaignDto {
   @Type(() => TemplateVariableDto)
   @IsOptional()
   templateVariables?: TemplateVariableDto[];
+
+  @IsString()
+  @IsOptional()
+  endTime?: string; // Formato: "HH:mm" (ex: "19:00")
 }

@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { CrudTable, Column } from "@/components/crud/CrudTable";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { DialogFooter } from "@/components/ui/dialog";
 import {
   Select,
@@ -22,6 +24,7 @@ interface Contact {
   cpf: string;
   contract?: string;
   segment?: string;
+  isCPC?: boolean;
 }
 
 export default function Contatos() {
@@ -29,7 +32,7 @@ export default function Contatos() {
   const [segments, setSegments] = useState<Segment[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
-  const [formData, setFormData] = useState({ name: '', phone: '', cpf: '', contract: '', segment: '' });
+  const [formData, setFormData] = useState({ name: '', phone: '', cpf: '', contract: '', segment: '', isCPC: false });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -40,6 +43,7 @@ export default function Contatos() {
     cpf: apiContact.cpf || '',
     contract: apiContact.contract || '',
     segment: apiContact.segment?.toString() || '',
+    isCPC: apiContact.isCPC || false,
   });
 
   const loadContacts = useCallback(async () => {
@@ -85,11 +89,20 @@ export default function Contatos() {
         return segment?.name || '-';
       }
     },
+    {
+      key: "isCPC",
+      label: "CPC",
+      render: (contact) => (
+        <Badge variant={contact.isCPC ? "default" : "secondary"} className={contact.isCPC ? "bg-blue-600 text-white" : ""}>
+          {contact.isCPC ? "Sim" : "Não"}
+        </Badge>
+      )
+    },
   ];
 
   const handleAdd = () => {
     setEditingContact(null);
-    setFormData({ name: '', phone: '', cpf: '', contract: '', segment: '' });
+    setFormData({ name: '', phone: '', cpf: '', contract: '', segment: '', isCPC: false });
     setIsFormOpen(true);
   };
 
@@ -101,6 +114,7 @@ export default function Contatos() {
       cpf: contact.cpf, 
       contract: contact.contract || '',
       segment: contact.segment || '',
+      isCPC: contact.isCPC || false,
     });
     setIsFormOpen(true);
   };
@@ -140,6 +154,7 @@ export default function Contatos() {
         cpf: formData.cpf.trim() || undefined,
         contract: formData.contract.trim() || undefined,
         segment: formData.segment ? parseInt(formData.segment) : undefined,
+        isCPC: formData.isCPC,
       };
 
       if (editingContact) {
@@ -219,6 +234,19 @@ export default function Contatos() {
             ))}
           </SelectContent>
         </Select>
+      </div>
+      <div className="flex items-center justify-between rounded-lg border p-4">
+        <div className="space-y-0.5">
+          <Label className="text-base font-medium">Marcar como CPC</Label>
+          <p className="text-sm text-muted-foreground">
+            Indica se este contato é um CPC (Contato com a Pessoa Certa)
+          </p>
+        </div>
+        <Switch
+          id="isCPC"
+          checked={formData.isCPC}
+          onCheckedChange={(checked) => setFormData({ ...formData, isCPC: checked })}
+        />
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={() => setIsFormOpen(false)} disabled={isSaving}>

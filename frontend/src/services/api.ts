@@ -413,11 +413,14 @@ export interface Campaign {
 }
 
 export interface CampaignStats {
-  campaignName: string;
+  campaignName?: string;
   totalContacts: number;
   sent: number;
   responses: number;
   pending: number;
+  failed?: number;
+  successRate?: string;
+  responseRate?: string;
 }
 
 export interface CreateCampaignData {
@@ -427,6 +430,7 @@ export interface CreateCampaignData {
   useTemplate?: boolean;
   templateId?: number;
   templateVariables?: Array<{ key: string; value: string }>;
+  endTime?: string; // Formato: "HH:mm" (ex: "19:00")
 }
 
 export const campaignsService = {

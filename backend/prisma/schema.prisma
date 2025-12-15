@@ -97,21 +97,22 @@ model Contact {
 }
 
 model Campaign {
-  id                Int      @id @default(autoincrement())
+  id                Int       @id @default(autoincrement())
   name              String
   contactName       String
   contactPhone      String
   contactSegment    Int?
-  dateTime          DateTime @default(now())
+  dateTime          DateTime  @default(now())
   lineReceptor      Int?
-  response          Boolean  @default(false)
+  response          Boolean   @default(false)
   speed             Speed
-  retryCount        Int      @default(0)
-  useTemplate       Boolean  @default(false)
+  retryCount        Int       @default(0)
+  useTemplate       Boolean   @default(false)
   templateId        Int?
-  templateVariables String?  @db.Text
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  templateVariables String?   @db.Text
+  endTime           DateTime? // Horário limite para envio das mensagens
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([contactPhone])
   @@index([contactSegment])
@@ -119,6 +120,7 @@ model Campaign {
   @@index([response])
   @@index([dateTime])
   @@index([templateId])
+  @@index([name])
 }
 
 model BlockList {
