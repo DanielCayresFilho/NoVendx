@@ -57,6 +57,7 @@ interface CrudTableProps<T extends { id: string }> {
   onFormOpenChange?: (open: boolean) => void;
   editingItem?: T | null;
   pageSize?: number;
+  renderActions?: (item: T) => React.ReactNode;
 }
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
@@ -69,6 +70,7 @@ const TableRowMemo = memo(function TableRowMemo<T extends { id: string }>({
   onEdit,
   onDelete,
   setDeleteItem,
+  renderActions,
 }: {
   item: T;
   columns: Column<T>[];
@@ -76,6 +78,7 @@ const TableRowMemo = memo(function TableRowMemo<T extends { id: string }>({
   onEdit?: (item: T) => void;
   onDelete?: (item: T) => void;
   setDeleteItem: (item: T) => void;
+  renderActions?: (item: T) => React.ReactNode;
 }) {
   return (
     <TableRow className="hover:bg-muted/20 transition-colors">
@@ -86,9 +89,10 @@ const TableRowMemo = memo(function TableRowMemo<T extends { id: string }>({
             : String(getValue(item, String(col.key)) ?? '')}
         </TableCell>
       ))}
-      {(onEdit || onDelete) && (
+      {(onEdit || onDelete || renderActions) && (
         <TableCell className="text-right">
           <div className="flex justify-end gap-1">
+            {renderActions && renderActions(item)}
             {onEdit && (
               <Button
                 variant="ghost"
@@ -121,6 +125,7 @@ const TableRowMemo = memo(function TableRowMemo<T extends { id: string }>({
   onEdit?: (item: T) => void;
   onDelete?: (item: T) => void;
   setDeleteItem: (item: T) => void;
+  renderActions?: (item: T) => React.ReactNode;
 }) => React.ReactElement;
 
 export function CrudTable<T extends { id: string }>({
@@ -138,6 +143,7 @@ export function CrudTable<T extends { id: string }>({
   onFormOpenChange,
   editingItem,
   pageSize: initialPageSize = 10,
+  renderActions,
 }: CrudTableProps<T>) {
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteItem, setDeleteItem] = useState<T | null>(null);
@@ -263,7 +269,7 @@ export function CrudTable<T extends { id: string }>({
                         {col.label}
                       </TableHead>
                     ))}
-                    {(onEdit || onDelete) && (
+                    {(onEdit || onDelete || renderActions) && (
                       <TableHead className="w-24 text-right">Ações</TableHead>
                     )}
                   </TableRow>
@@ -278,6 +284,7 @@ export function CrudTable<T extends { id: string }>({
                       onEdit={onEdit}
                       onDelete={onDelete}
                       setDeleteItem={setDeleteItem}
+                      renderActions={renderActions}
                     />
                   ))}
                 </TableBody>

@@ -231,6 +231,58 @@ export class WebhooksService {
 
           return { status: 'line_disconnected', lineId: line?.id };
         }
+
+        // Linha conectada (QRCODE escaneado)
+        if (state === 'open' || state === 'OPEN' || state === 'connected' || state === 'CONNECTED') {
+          const instanceName = data.instance || data.instanceName;
+          const phoneNumber = instanceName?.replace('line_', '');
+
+          const line = await this.prisma.linesStock.findFirst({
+            where: {
+              phone: {
+                contains: phoneNumber,
+              },
+            },
+          });
+
+          if (line) {
+            // Verificar se linha já tem usuário vinculado
+            const userWithLine = await this.prisma.user.findFirst({
+              where: {
+                line: line.id,
+              },
+            });
+
+            if (!userWithLine) {
+              // Linha conectada mas sem vínculo - procurar operador online sem linha
+              const operatorWithoutLine = await this.prisma.user.findFirst({
+                where: {
+                  role: 'operator',
+                  line: null,
+                  status: 'Online',
+                },
+              });
+
+              if (operatorWithoutLine) {
+                // Vincular linha ao operador
+                await this.prisma.user.update({
+                  where: { id: operatorWithoutLine.id },
+                  data: { line: line.id },
+                });
+
+                console.log(`✅ [Webhook] Linha ${line.phone} vinculada automaticamente ao operador ${operatorWithoutLine.name}`);
+                
+                // Notificar via WebSocket
+                this.websocketGateway.emitToUser(operatorWithoutLine.id, 'line-assigned', {
+                  lineId: line.id,
+                  linePhone: line.phone,
+                });
+              }
+            }
+          }
+
+          return { status: 'line_connected', lineId: line?.id };
+        }
       }
 
       return { status: 'processed' };

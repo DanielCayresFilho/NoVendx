@@ -66,7 +66,57 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       client.data.user = user;
       this.connectedUsers.set(user.id, client.id);
 
+      // Atualizar status do usuário para Online
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { status: 'Online' },
+      });
+
       console.log(`✅ Usuário ${user.name} (${user.role}) conectado via WebSocket`);
+
+      // Se for operador sem linha, verificar se há linha disponível para vincular
+      if (user.role === 'operator' && !user.line) {
+        // Buscar todas as linhas ativas
+        const allActiveLines = await this.prisma.linesStock.findMany({
+          where: {
+            lineStatus: 'active',
+          },
+        });
+
+        // Verificar quais linhas não têm usuário vinculado
+        const linesWithUsers = await this.prisma.user.findMany({
+          where: {
+            line: {
+              in: allActiveLines.map(l => l.id),
+            },
+          },
+          select: {
+            line: true,
+          },
+        });
+
+        const usedLineIds = new Set(linesWithUsers.map(u => u.line).filter(Boolean));
+        const availableLine = allActiveLines.find(line => !usedLineIds.has(line.id));
+
+        if (availableLine) {
+          // Vincular linha ao operador
+          await this.prisma.user.update({
+            where: { id: user.id },
+            data: { line: availableLine.id },
+          });
+
+          // Atualizar user object
+          user.line = availableLine.id;
+
+          console.log(`✅ [WebSocket] Linha ${availableLine.phone} vinculada automaticamente ao operador ${user.name}`);
+          
+          // Notificar o operador
+          client.emit('line-assigned', {
+            lineId: availableLine.id,
+            linePhone: availableLine.phone,
+          });
+        }
+      }
 
       // Enviar conversas ativas ao conectar (apenas para operators)
       if (user.role === 'operator' && user.line) {
@@ -79,9 +129,17 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     }
   }
 
-  handleDisconnect(client: Socket) {
+  async handleDisconnect(client: Socket) {
     if (client.data.user) {
-      this.connectedUsers.delete(client.data.user.id);
+      const userId = client.data.user.id;
+      this.connectedUsers.delete(userId);
+      
+      // Atualizar status do usuário para Offline
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { status: 'Offline' },
+      });
+      
       console.log(`❌ Usuário ${client.data.user.name} desconectado do WebSocket`);
     }
   }
@@ -280,6 +338,16 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     // Emitir para supervisores do segmento
     if (conversation.segment) {
       this.emitToSupervisors(conversation.segment, 'new_message', { message: conversation });
+    }
+  }
+
+  emitToUser(userId: number, event: string, data: any) {
+    const socketId = this.connectedUsers.get(userId);
+    if (socketId) {
+      const client = this.server.sockets.sockets.get(socketId);
+      if (client) {
+        client.emit(event, data);
+      }
     }
   }
 

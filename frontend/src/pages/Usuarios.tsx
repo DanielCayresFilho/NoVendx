@@ -345,14 +345,20 @@ export default function Usuarios() {
             <SelectValue placeholder="Selecione uma linha" />
           </SelectTrigger>
           <SelectContent>
-            {lines.map((line) => (
-              <SelectItem key={line.id} value={String(line.id)}>
-                {line.phone} {line.oficial ? "(Oficial)" : `(${line.evolutionName})`}
-              </SelectItem>
-            ))}
+            {lines
+              .filter((line) => {
+                // Filtrar apenas linhas sem vínculo (que não estão atribuídas a nenhum usuário)
+                const isLineInUse = users.some((user) => user.line === line.id);
+                return !isLineInUse;
+              })
+              .map((line) => (
+                <SelectItem key={line.id} value={String(line.id)}>
+                  {line.phone} {line.oficial ? "(Oficial)" : `(${line.evolutionName})`}
+                </SelectItem>
+              ))}
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">Define qual linha será usada para envio de mensagens</p>
+        <p className="text-xs text-muted-foreground">Define qual linha será usada para envio de mensagens (apenas linhas sem vínculo)</p>
       </div>
       {formData.role === 'operador' && (
         <div className="flex items-center justify-between rounded-lg border p-4">

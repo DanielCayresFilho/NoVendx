@@ -253,15 +253,16 @@ export default function Linhas() {
     }
   };
 
-  const handleShowQrCode = async () => {
-    if (!editingLine) return;
+  const handleShowQrCode = async (line?: Line) => {
+    const targetLine = line || editingLine;
+    if (!targetLine) return;
 
     setQrCodeState('loading');
     setQrCodeData(null);
     setIsQrCodeOpen(true);
 
     try {
-      const response = await linesService.getQrCode(Number(editingLine.id));
+      const response = await linesService.getQrCode(Number(targetLine.id));
       console.log('QR Code response:', response);
       
       if (response.connected) {
@@ -459,6 +460,17 @@ export default function Linhas() {
           isFormOpen={isFormOpen}
           onFormOpenChange={setIsFormOpen}
           editingItem={editingLine}
+          renderActions={(line) => (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-whatsapp hover:text-whatsapp"
+              onClick={() => handleShowQrCode(line)}
+              title="Ver QR Code"
+            >
+              <QrCode className="h-4 w-4" />
+            </Button>
+          )}
         />
       </div>
 

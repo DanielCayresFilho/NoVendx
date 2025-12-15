@@ -115,34 +115,75 @@ export default function Dashboard() {
 
   const loadDailyStats = useCallback(async () => {
     try {
-      // TODO: Implementar endpoint /dashboard/stats no backend
-      // Por enquanto, usar dados simulados baseados nas métricas atuais
-      const mockData = generateMockStats();
-      setDailyStats(mockData);
+      // Buscar conversas dos últimos 7 dias para gerar estatísticas reais
+      const today = new Date();
+      const sevenDaysAgo = new Date(today);
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6); // 7 dias incluindo hoje
+
+      // Buscar todas as conversas dos últimos 7 dias
+      const allConversations = await conversationsService.findAll({});
+      
+      // Agrupar por dia
+      const statsByDay = new Map<string, { conversations: Set<string>; messages: number; operators: Set<number> }>();
+      const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+      
+      // Inicializar todos os dias
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(today);
+        date.setDate(date.getDate() - (6 - i));
+        const dayKey = `${days[date.getDay()]}, ${date.getDate().toString().padStart(2, '0')}`;
+        statsByDay.set(dayKey, { conversations: new Set(), messages: 0, operators: new Set() });
+      }
+
+      // Processar conversas
+      allConversations.forEach((conv: any) => {
+        const convDate = new Date(conv.datetime);
+        if (convDate >= sevenDaysAgo) {
+          const dayKey = `${days[convDate.getDay()]}, ${convDate.getDate().toString().padStart(2, '0')}`;
+          const stats = statsByDay.get(dayKey);
+          if (stats) {
+            stats.conversations.add(conv.contactPhone);
+            stats.messages += 1;
+            if (conv.userLine) {
+              stats.operators.add(conv.userLine);
+            }
+          }
+        }
+      });
+
+      // Buscar operadores online de cada dia (aproximação: usar dados atuais)
+      const onlineOperators = await usersService.getOnlineOperators();
+      const onlineCount = onlineOperators.length;
+
+      // Converter para array
+      const statsArray: DailyStats[] = Array.from(statsByDay.entries()).map(([date, stats]) => ({
+        date,
+        conversations: stats.conversations.size,
+        messages: stats.messages,
+        operators: Math.max(stats.operators.size, onlineCount), // Usar o maior entre histórico e atual
+      }));
+
+      setDailyStats(statsArray);
     } catch (error) {
       console.error('Error loading daily stats:', error);
-      const mockData = generateMockStats();
-      setDailyStats(mockData);
+      // Em caso de erro, usar dados vazios ao invés de mockados
+      const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+      const today = new Date();
+      const emptyStats: DailyStats[] = Array.from({ length: 7 }, (_, i) => {
+        const date = new Date(today);
+        date.setDate(date.getDate() - (6 - i));
+        return {
+          date: `${days[date.getDay()]}, ${date.getDate().toString().padStart(2, '0')}`,
+          conversations: 0,
+          messages: 0,
+          operators: 0,
+        };
+      });
+      setDailyStats(emptyStats);
     } finally {
       setIsLoadingChart(false);
     }
   }, []);
-
-  // Generate mock data for demo purposes
-  const generateMockStats = (): DailyStats[] => {
-    const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-    const today = new Date();
-    return Array.from({ length: 7 }, (_, i) => {
-      const date = new Date(today);
-      date.setDate(date.getDate() - (6 - i));
-      return {
-        date: `${days[date.getDay()]}, ${date.getDate().toString().padStart(2, '0')}`,
-        conversations: Math.floor(Math.random() * 50) + 10,
-        messages: Math.floor(Math.random() * 200) + 50,
-        operators: Math.floor(Math.random() * 10) + 2,
-      };
-    });
-  };
 
   useEffect(() => {
     loadMetrics();
