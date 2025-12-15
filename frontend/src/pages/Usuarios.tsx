@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { CrudTable, Column } from "@/components/crud/CrudTable";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +16,7 @@ import { DialogFooter } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { usersService, segmentsService, linesService, type User as ApiUser, type Segment, type Line } from "@/services/api";
-import { Loader2 } from "lucide-react";
+import { Loader2, Upload } from "lucide-react";
 
 interface User {
   id: string;
@@ -70,6 +70,8 @@ export default function Usuarios() {
   const [isSaving, setIsSaving] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({ 
     name: '', 
     email: '', 
@@ -388,6 +390,50 @@ export default function Usuarios() {
     </div>
   );
 
+  const handleUploadCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.csv')) {
+      toast({
+        title: "Arquivo inválido",
+        description: "Por favor, selecione um arquivo CSV",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const result = await usersService.uploadCSV(file);
+      toast({
+        title: "Importação concluída",
+        description: `${result.message}. ${result.errors.length > 0 ? `${result.errors.length} erro(s) encontrado(s).` : ''}`,
+        variant: result.errors.length > 0 ? "default" : "success",
+      });
+
+      if (result.errors.length > 0) {
+        console.warn('Erros na importação:', result.errors);
+      }
+
+      // Recarregar lista de usuários
+      await loadData();
+    } catch (error) {
+      console.error('Error uploading CSV:', error);
+      toast({
+        title: "Erro ao importar",
+        description: error instanceof Error ? error.message : "Não foi possível importar o arquivo CSV",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+      // Limpar input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   if (isLoading) {
     return (
       <MainLayout>
@@ -401,6 +447,33 @@ export default function Usuarios() {
   return (
     <MainLayout>
       <div className="animate-fade-in">
+        <div className="mb-4 flex justify-end gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            onChange={handleUploadCSV}
+            className="hidden"
+            id="csv-upload-users"
+          />
+          <Button
+            variant="outline"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+          >
+            {isUploading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Importando...
+              </>
+            ) : (
+              <>
+                <Upload className="mr-2 h-4 w-4" />
+                Importar CSV
+              </>
+            )}
+          </Button>
+        </div>
         <CrudTable
           title="Usuários"
           subtitle="Gerenciar usuários do sistema"

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { CrudTable, Column } from "@/components/crud/CrudTable";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { DialogFooter } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { segmentsService, Segment as APISegment } from "@/services/api";
+import { Upload, Loader2 } from "lucide-react";
 
 interface Segment {
   id: string;
@@ -20,6 +21,8 @@ export default function Segmentos() {
   const [formData, setFormData] = useState({ name: '' });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const mapApiToLocal = (apiSegment: APISegment): Segment => ({
     id: apiSegment.id.toString(),
@@ -118,6 +121,50 @@ export default function Segmentos() {
     }
   };
 
+  const handleUploadCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.csv')) {
+      toast({
+        title: "Arquivo inválido",
+        description: "Por favor, selecione um arquivo CSV",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const result = await segmentsService.uploadCSV(file);
+      toast({
+        title: "Importação concluída",
+        description: `${result.message}. ${result.errors.length > 0 ? `${result.errors.length} erro(s) encontrado(s).` : ''}`,
+        variant: result.errors.length > 0 ? "default" : "success",
+      });
+
+      if (result.errors.length > 0) {
+        console.warn('Erros na importação:', result.errors);
+      }
+
+      // Recarregar lista de segmentos
+      await loadSegments();
+    } catch (error) {
+      console.error('Error uploading CSV:', error);
+      toast({
+        title: "Erro ao importar",
+        description: error instanceof Error ? error.message : "Não foi possível importar o arquivo CSV",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+      // Limpar input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   const renderForm = () => (
     <div className="space-y-4 py-4">
       <div className="space-y-2">
@@ -142,6 +189,33 @@ export default function Segmentos() {
   return (
     <MainLayout>
       <div className="animate-fade-in">
+        <div className="mb-4 flex justify-end gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            onChange={handleUploadCSV}
+            className="hidden"
+            id="csv-upload-segments"
+          />
+          <Button
+            variant="outline"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+          >
+            {isUploading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Importando...
+              </>
+            ) : (
+              <>
+                <Upload className="mr-2 h-4 w-4" />
+                Importar CSV
+              </>
+            )}
+          </Button>
+        </div>
         <CrudTable
           title="Segmentos"
           subtitle="Gerenciar segmentos de atendimento"

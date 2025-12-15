@@ -1,8 +1,10 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import * as argon2 from 'argon2';
+import csv from 'csv-parser';
+import { Readable } from 'stream';
 
 @Injectable()
 export class UsersService {
@@ -142,6 +144,98 @@ export class UsersService {
         status: 'Online',
         ...(segment && { segment }),
       },
+    });
+  }
+
+  async importFromCSV(file: Express.Multer.File): Promise<{ success: number; errors: string[] }> {
+    if (!file || !file.buffer) {
+      throw new BadRequestException('Arquivo CSV não fornecido');
+    }
+
+    const results: any[] = [];
+    const errors: string[] = [];
+    let successCount = 0;
+
+    return new Promise((resolve, reject) => {
+      const stream = Readable.from(file.buffer.toString('utf-8'));
+      
+      stream
+        .pipe(csv({ separator: ';', skipEmptyLines: true, skipLinesWithError: true }))
+        .on('data', (data) => {
+          results.push(data);
+        })
+        .on('end', async () => {
+          console.log(`📊 Processando ${results.length} linhas do CSV`);
+
+          for (const row of results) {
+            try {
+              const name = row['Nome']?.trim();
+              const email = row['E-mail']?.trim() || row['Email']?.trim();
+              const segmentName = row['Segmento']?.trim();
+
+              if (!name || !email) {
+                errors.push(`Linha ignorada: Nome ou E-mail vazio (${name || 'sem nome'}, ${email || 'sem email'})`);
+                continue;
+              }
+
+              // Verificar se usuário já existe
+              const existingUser = await this.prisma.user.findUnique({
+                where: { email },
+              });
+
+              if (existingUser) {
+                errors.push(`Usuário já existe: ${email}`);
+                continue;
+              }
+
+              // Buscar segmento pelo nome
+              let segmentId: number | null = null;
+              if (segmentName) {
+                const segment = await this.prisma.segment.findFirst({
+                  where: {
+                    name: {
+                      contains: segmentName,
+                      mode: 'insensitive',
+                    },
+                  },
+                });
+
+                if (segment) {
+                  segmentId = segment.id;
+                } else {
+                  errors.push(`Segmento não encontrado: ${segmentName} (usuário: ${email})`);
+                  // Continuar criando o usuário sem segmento
+                }
+              }
+
+              // Criar usuário (padrão: operador, senha inicial = email)
+              const defaultPassword = email; // Senha inicial = email
+              const hashedPassword = await argon2.hash(defaultPassword);
+
+              await this.prisma.user.create({
+                data: {
+                  name,
+                  email,
+                  password: hashedPassword,
+                  role: 'operator',
+                  segment: segmentId,
+                },
+              });
+
+              successCount++;
+              console.log(`✅ Usuário criado: ${name} (${email})`);
+            } catch (error) {
+              const errorMsg = error instanceof Error ? error.message : 'Erro desconhecido';
+              errors.push(`Erro ao processar linha: ${errorMsg}`);
+              console.error('❌ Erro ao processar linha do CSV:', error);
+            }
+          }
+
+          resolve({ success: successCount, errors });
+        })
+        .on('error', (error) => {
+          reject(new BadRequestException(`Erro ao processar CSV: ${error.message}`));
+        });
     });
   }
 }

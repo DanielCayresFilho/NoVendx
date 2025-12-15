@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -66,5 +67,21 @@ export class UsersController {
   @Roles(Role.admin)
   remove(@Param('id') id: string) {
     return this.usersService.remove(+id);
+  }
+
+  @Post('upload-csv')
+  @Roles(Role.admin)
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadCSV(@UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new Error('Arquivo CSV não fornecido');
+    }
+
+    const result = await this.usersService.importFromCSV(file);
+    return {
+      message: `Importação concluída: ${result.success} usuário(s) criado(s)`,
+      success: result.success,
+      errors: result.errors,
+    };
   }
 }

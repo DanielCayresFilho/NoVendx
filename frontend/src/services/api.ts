@@ -152,6 +152,27 @@ export const usersService = {
   delete: async (id: number): Promise<void> => {
     await apiRequest(`/users/${id}`, { method: 'DELETE' });
   },
+
+  uploadCSV: async (file: File): Promise<{ message: string; success: number; errors: string[] }> => {
+    const token = getAuthToken();
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_BASE_URL}/users/upload-csv`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Erro na requisição' }));
+      throw new Error(error.message || `HTTP error ${response.status}`);
+    }
+
+    return response.json();
+  },
 };
 
 // ==================== SEGMENTS ====================
@@ -188,6 +209,27 @@ export const segmentsService = {
 
   delete: async (id: number): Promise<void> => {
     await apiRequest(`/segments/${id}`, { method: 'DELETE' });
+  },
+
+  uploadCSV: async (file: File): Promise<{ message: string; success: number; errors: string[] }> => {
+    const token = getAuthToken();
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_BASE_URL}/segments/upload-csv`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Erro na requisição' }));
+      throw new Error(error.message || `HTTP error ${response.status}`);
+    }
+
+    return response.json();
   },
 };
 
