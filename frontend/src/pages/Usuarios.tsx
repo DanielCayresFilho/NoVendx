@@ -22,7 +22,7 @@ interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'supervisor' | 'operador';
+  role: 'admin' | 'supervisor' | 'operador' | 'ativador';
   segment?: number;
   line?: number;
   lineName?: string;
@@ -33,13 +33,15 @@ interface User {
 const roleColors = {
   admin: "bg-destructive text-destructive-foreground",
   supervisor: "bg-warning text-warning-foreground",
-  operador: "bg-success text-success-foreground"
+  operador: "bg-success text-success-foreground",
+  ativador: "bg-blue-600 text-white"
 };
 
 const roleLabels = {
   admin: "Admin",
   supervisor: "Supervisor",
-  operador: "Operador"
+  operador: "Operador",
+  ativador: "Ativador"
 };
 
 // Map API role to frontend role
