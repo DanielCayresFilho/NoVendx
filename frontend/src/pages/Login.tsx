@@ -46,8 +46,8 @@ export default function Login() {
               className="w-full h-full object-contain"
             />
           </div>
-          <h1 className="text-2xl font-bold text-foreground">Bem-vindo ao Vend</h1>
-          <p className="text-muted-foreground mt-1">Sistema de Atendimento</p>
+          <h1 className="text-2xl font-bold text-foreground">Bem-vindo de volta</h1>
+          <p className="text-muted-foreground mt-1">Insira suas credenciais.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">

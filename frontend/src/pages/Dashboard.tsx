@@ -249,7 +249,7 @@ export default function Dashboard() {
                 Olá, {user?.name?.split(' ')[0]}! 👋
               </h1>
               <p className="text-muted-foreground mb-4 max-w-md">
-                Bem-vindo ao Vend, sua plataforma integrada de atendimento ao cliente via WhatsApp.
+                Conectando empresas e clientes pelo WhatsApp.
               </p>
 
               {/* Tags with connection status */}
