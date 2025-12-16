@@ -142,7 +142,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               },
             });
 
-            availableLine = await this.findAvailableLineForOperator(segmentLines, user.id);
+            availableLine = await this.findAvailableLineForOperator(segmentLines, user.id, user.segment);
           }
 
           // 2. Se não encontrou linha do segmento, buscar linha padrão (segmento "Padrão")
@@ -160,7 +160,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                 },
               });
 
-              availableLine = await this.findAvailableLineForOperator(defaultLines, user.id);
+              availableLine = await this.findAvailableLineForOperator(defaultLines, user.id, user.segment);
 
               // Se encontrou linha padrão e operador tem segmento, atualizar o segmento da linha
               if (availableLine && user.segment) {
@@ -182,41 +182,65 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
             });
 
             if (currentOperatorsCount < 2) {
-              // Vincular operador à linha usando a nova tabela
-              await (this.prisma as any).lineOperator.create({
-                data: {
-                  lineId: availableLine.id,
-                  userId: user.id,
-                },
+              // IMPORTANTE: Verificar se a linha já tem operadores de outro segmento
+              const existingOperators = await (this.prisma as any).lineOperator.findMany({
+                where: { lineId: availableLine.id },
+                include: { user: true },
               });
 
-              // Atualizar campos legacy para compatibilidade
-              await this.prisma.user.update({
-                where: { id: user.id },
-                data: { line: availableLine.id },
-              });
-
-              if (currentOperatorsCount === 0) {
-                // Primeiro operador - atualizar linkedTo
-                await this.prisma.linesStock.update({
-                  where: { id: availableLine.id },
-                  data: { linkedTo: user.id },
-                });
+              // Se a linha já tem operadores, verificar se são do mesmo segmento
+              if (existingOperators.length > 0) {
+                const allSameSegment = existingOperators.every((lo: any) => 
+                  lo.user.segment === user.segment
+                );
+                
+                if (!allSameSegment) {
+                  // Linha já tem operador de outro segmento, não pode atribuir
+                  console.warn(`⚠️ [WebSocket] Linha ${availableLine.phone} já tem operador de outro segmento, pulando para operador ${user.name}`);
+                  availableLine = null; // Forçar busca de outra linha
+                }
               }
 
-              // Atualizar user object
-              user.line = availableLine.id;
+              // Só vincular se passou na validação de segmento
+              if (availableLine) {
+                // Vincular operador à linha usando a nova tabela
+                await (this.prisma as any).lineOperator.create({
+                  data: {
+                    lineId: availableLine.id,
+                    userId: user.id,
+                  },
+                });
 
-              console.log(`✅ [WebSocket] Linha ${availableLine.phone} vinculada automaticamente ao operador ${user.name} (segmento ${availableLine.segment || 'sem segmento'})`);
-              
-              // Notificar o operador
-              client.emit('line-assigned', {
-                lineId: availableLine.id,
-                linePhone: availableLine.phone,
-                message: `Você foi vinculado à linha ${availableLine.phone} automaticamente.`,
-              });
+                // Atualizar campos legacy para compatibilidade
+                await this.prisma.user.update({
+                  where: { id: user.id },
+                  data: { line: availableLine.id },
+                });
+
+                if (currentOperatorsCount === 0) {
+                  // Primeiro operador - atualizar linkedTo
+                  await this.prisma.linesStock.update({
+                    where: { id: availableLine.id },
+                    data: { linkedTo: user.id },
+                  });
+                }
+
+                // Atualizar user object
+                user.line = availableLine.id;
+
+                console.log(`✅ [WebSocket] Linha ${availableLine.phone} vinculada automaticamente ao operador ${user.name} (segmento ${availableLine.segment || 'sem segmento'})`);
+                
+                // Notificar o operador
+                client.emit('line-assigned', {
+                  lineId: availableLine.id,
+                  linePhone: availableLine.phone,
+                  message: `Você foi vinculado à linha ${availableLine.phone} automaticamente.`,
+                });
+              }
             }
-          } else {
+          }
+          
+          if (!availableLine || !user.line) {
             console.log(`ℹ️ [WebSocket] Nenhuma linha disponível (do segmento ou padrão) para o operador ${user.name}`);
           }
         }
@@ -700,8 +724,14 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
   }
 
   // Método auxiliar para encontrar linha disponível para o operador
-  private async findAvailableLineForOperator(availableLines: any[], userId: number) {
+  private async findAvailableLineForOperator(availableLines: any[], userId: number, userSegment: number | null) {
     for (const line of availableLines) {
+      // IMPORTANTE: Verificar se a linha pertence ao mesmo segmento do operador
+      // Se a linha tem segmento diferente e não é padrão (null), pular
+      if (line.segment !== null && line.segment !== userSegment) {
+        continue;
+      }
+
       const operatorsCount = await (this.prisma as any).lineOperator.count({
         where: { lineId: line.id },
       });
@@ -718,6 +748,24 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         });
 
         if (!existing) {
+          // Verificar se a linha já tem operadores de outro segmento
+          const existingOperators = await (this.prisma as any).lineOperator.findMany({
+            where: { lineId: line.id },
+            include: { user: true },
+          });
+
+          // Se a linha já tem operadores, verificar se são do mesmo segmento
+          if (existingOperators.length > 0) {
+            const allSameSegment = existingOperators.every((lo: any) => 
+              lo.user.segment === userSegment
+            );
+            
+            if (!allSameSegment) {
+              // Linha já tem operador de outro segmento, não pode atribuir
+              continue;
+            }
+          }
+
           return line;
         }
       }
@@ -778,7 +826,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
           },
         });
 
-        availableLine = await this.findAvailableLineForOperator(segmentLines, userId);
+        availableLine = await this.findAvailableLineForOperator(segmentLines, userId, userSegment);
       }
 
       // 2. Se não encontrou linha do segmento, buscar linha padrão
@@ -795,7 +843,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
             },
           });
 
-          availableLine = await this.findAvailableLineForOperator(defaultLines, userId);
+          availableLine = await this.findAvailableLineForOperator(defaultLines, userId, userSegment);
 
           // Se encontrou linha padrão e operador tem segmento, atualizar o segmento da linha
           if (availableLine && userSegment) {

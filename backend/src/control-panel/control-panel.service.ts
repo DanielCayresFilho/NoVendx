@@ -484,6 +484,14 @@ export class ControlPanelService {
         while (!assignedLine && attempts < maxAttempts) {
           const candidateLine = availableLines[lineIndex % availableLines.length];
           
+          // IMPORTANTE: Verificar se a linha pertence ao mesmo segmento do operador
+          // Se a linha tem segmento diferente e não é padrão, pular
+          if (candidateLine.segment !== null && candidateLine.segment !== operator.segment) {
+            lineIndex++;
+            attempts++;
+            continue;
+          }
+          
           // Verificar quantos operadores já estão vinculados
           const operatorsCount = await (this.prisma as any).lineOperator.count({
             where: { lineId: candidateLine.id },
@@ -501,6 +509,26 @@ export class ControlPanelService {
             });
 
             if (!existing) {
+              // Verificar se a linha já tem operadores de outro segmento
+              const existingOperators = await (this.prisma as any).lineOperator.findMany({
+                where: { lineId: candidateLine.id },
+                include: { user: true },
+              });
+
+              // Se a linha já tem operadores, verificar se são do mesmo segmento
+              if (existingOperators.length > 0) {
+                const allSameSegment = existingOperators.every((lo: any) => 
+                  lo.user.segment === operator.segment
+                );
+                
+                if (!allSameSegment) {
+                  // Linha já tem operador de outro segmento, não pode atribuir
+                  lineIndex++;
+                  attempts++;
+                  continue;
+                }
+              }
+
               assignedLine = candidateLine;
             }
           }
