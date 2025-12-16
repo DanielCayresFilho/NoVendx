@@ -1056,6 +1056,7 @@ export const controlPanelService = {
     success: boolean;
     unassignedOperators: number;
     linesUpdated: number;
+    reassignedOperators: number;
     message: string;
   }> => {
     return apiRequest('/control-panel/unassign-all-lines', {

@@ -684,6 +684,7 @@ export class ControlPanelService {
     success: boolean;
     unassignedOperators: number;
     linesUpdated: number;
+    reassignedOperators: number;
     message: string;
   }> {
     try {
@@ -698,23 +699,33 @@ export class ControlPanelService {
         throw new Error('Segmento "Padrão" não encontrado no banco de dados');
       }
 
-      // 2. Desatribuir todos os operadores de todas as linhas
+      // 2. Desatribuir TODOS os operadores de TODAS as linhas (sem exceção)
       const deletedCount = await (this.prisma as any).lineOperator.deleteMany({});
       console.log(`✅ [Desatribuição em Massa] ${deletedCount.count} vínculos de operadores removidos`);
 
-      // 3. Limpar campo legacy 'line' de todos os operadores
-      await this.prisma.user.updateMany({
+      // 3. Limpar campo legacy 'line' de TODOS os operadores (sem exceção)
+      const updatedUsers = await this.prisma.user.updateMany({
         where: {
           role: 'operator',
-          line: { not: null },
         },
         data: {
           line: null,
         },
       });
-      console.log('✅ [Desatribuição em Massa] Campo legacy "line" limpo de todos os operadores');
+      console.log(`✅ [Desatribuição em Massa] Campo legacy "line" limpo de ${updatedUsers.count} operadores`);
 
-      // 4. Atualizar todas as linhas ativas para o segmento "Padrão"
+      // 4. Limpar campo legacy 'linkedTo' de TODAS as linhas
+      await this.prisma.linesStock.updateMany({
+        where: {
+          lineStatus: 'active',
+        },
+        data: {
+          linkedTo: null,
+        },
+      });
+      console.log('✅ [Desatribuição em Massa] Campo legacy "linkedTo" limpo de todas as linhas');
+
+      // 5. Atualizar todas as linhas ativas para o segmento "Padrão"
       const updatedLines = await this.prisma.linesStock.updateMany({
         where: {
           lineStatus: 'active',
@@ -722,12 +733,11 @@ export class ControlPanelService {
         },
         data: {
           segment: defaultSegment.id,
-          linkedTo: null, // Limpar campo legacy também
         },
       });
       console.log(`✅ [Desatribuição em Massa] ${updatedLines.count} linhas atualizadas para o segmento "Padrão"`);
 
-      // 5. Também atualizar linhas com segmento null
+      // 6. Também atualizar linhas com segmento null
       const updatedNullLines = await this.prisma.linesStock.updateMany({
         where: {
           lineStatus: 'active',
@@ -735,18 +745,24 @@ export class ControlPanelService {
         },
         data: {
           segment: defaultSegment.id,
-          linkedTo: null,
         },
       });
       console.log(`✅ [Desatribuição em Massa] ${updatedNullLines.count} linhas com segmento null atualizadas para "Padrão"`);
 
       const totalLinesUpdated = updatedLines.count + updatedNullLines.count;
 
+      // 7. Reatribuir linhas automaticamente (usando a lógica de atribuição em massa)
+      // Isso vai respeitar as evolutions ativas configuradas no painel
+      console.log('🔄 [Desatribuição em Massa] Iniciando reatribuição automática de linhas...');
+      const reassignmentResult = await this.assignLinesToAllOperators();
+      console.log(`✅ [Desatribuição em Massa] Reatribuição concluída: ${reassignmentResult.assigned} operadores receberam linhas`);
+
       return {
         success: true,
         unassignedOperators: deletedCount.count,
         linesUpdated: totalLinesUpdated,
-        message: `Desatribuição concluída: ${deletedCount.count} operadores desvinculados, ${totalLinesUpdated} linhas atualizadas para segmento "Padrão"`,
+        reassignedOperators: reassignmentResult.assigned,
+        message: `Desatribuição concluída: ${deletedCount.count} operadores desvinculados, ${totalLinesUpdated} linhas atualizadas para segmento "Padrão", ${reassignmentResult.assigned} operadores receberam novas linhas automaticamente`,
       };
     } catch (error) {
       console.error('❌ [Desatribuição em Massa] Erro:', error);

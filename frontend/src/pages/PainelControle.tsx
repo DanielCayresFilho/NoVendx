@@ -252,7 +252,8 @@ export default function PainelControle() {
                     const result = await controlPanelService.unassignAllLines();
                     toast({
                       title: "Desatribuição concluída",
-                      description: result.message,
+                      description: `${result.message}\n${result.reassignedOperators} operadores receberam novas linhas automaticamente.`,
+                      duration: 10000,
                     });
                   } catch (error) {
                     toast({
