@@ -361,11 +361,10 @@ export class ControlPanelService {
       reason?: string;
     }>;
   }> {
-    // Buscar todos os operadores online
+    // Buscar todos os operadores (online e offline)
     const operators = await this.prisma.user.findMany({
       where: {
         role: 'operator',
-        status: 'Online',
       },
       orderBy: {
         segment: 'asc',
