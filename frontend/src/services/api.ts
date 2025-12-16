@@ -510,6 +510,12 @@ export const conversationsService = {
     return apiRequest<Conversation[]>(`/conversations${query}`);
   },
 
+  recallContact: async (phone: string): Promise<Conversation> => {
+    return apiRequest<Conversation>(`/conversations/recall/${encodeURIComponent(phone)}`, {
+      method: 'POST',
+    });
+  },
+
   getActive: async (): Promise<Conversation[]> => {
     return apiRequest<Conversation[]>('/conversations/active');
   },

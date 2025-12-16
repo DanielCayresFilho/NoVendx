@@ -137,4 +137,56 @@ export class ConversationsService {
       },
     });
   }
+
+  /**
+   * Rechamar contato após linha banida
+   * Cria uma nova conversa ativa para o contato na nova linha do operador
+   */
+  async recallContact(contactPhone: string, userId: number, userLine: number | null) {
+    if (!userLine) {
+      throw new NotFoundException('Operador não possui linha atribuída');
+    }
+
+    // Buscar contato
+    const contact = await this.prisma.contact.findFirst({
+      where: { phone: contactPhone },
+    });
+
+    if (!contact) {
+      throw new NotFoundException('Contato não encontrado');
+    }
+
+    // Buscar última conversa com este contato para pegar dados
+    const lastConversation = await this.prisma.conversation.findFirst({
+      where: { contactPhone },
+      orderBy: { datetime: 'desc' },
+    });
+
+    // Buscar dados do operador
+    const operator = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!operator) {
+      throw new NotFoundException('Operador não encontrado');
+    }
+
+    // Criar nova conversa ativa (não tabulada) na nova linha
+    const newConversation = await this.prisma.conversation.create({
+      data: {
+        contactName: contact.name,
+        contactPhone: contact.phone,
+        segment: contact.segment || lastConversation?.segment || operator.segment,
+        userName: operator.name,
+        userLine: userLine,
+        userId: userId,
+        message: 'Contato rechamado após linha banida',
+        sender: 'operator',
+        messageType: 'text',
+        tabulation: null, // Conversa ativa
+      },
+    });
+
+    return newConversation;
+  }
 }

@@ -12,7 +12,10 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 @Controller('conversations')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ConversationsController {
-  constructor(private readonly conversationsService: ConversationsService) {}
+  constructor(
+    private readonly conversationsService: ConversationsService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Post()
   @Roles(Role.admin, Role.supervisor, Role.operator)
@@ -115,6 +118,29 @@ export class ConversationsController {
     @Body() tabulateDto: TabulateConversationDto,
   ) {
     return this.conversationsService.tabulateConversation(phone, tabulateDto.tabulationId);
+  }
+
+  @Post('recall/:phone')
+  @Roles(Role.operator)
+  async recallContact(
+    @Param('phone') phone: string,
+    @CurrentUser() user: any,
+  ) {
+    console.log(`📞 [POST /conversations/recall/:phone] Operador ${user.name} rechamando contato ${phone}`);
+    
+    // Buscar linha atual do operador (pode estar na tabela LineOperator ou no campo legacy)
+    let userLine = user.line;
+    
+    // Se não tiver no campo legacy, buscar na tabela LineOperator
+    if (!userLine) {
+      const lineOperator = await this.prisma.lineOperator.findFirst({
+        where: { userId: user.id },
+        select: { lineId: true },
+      });
+      userLine = lineOperator?.lineId || null;
+    }
+    
+    return this.conversationsService.recallContact(phone, user.id, userLine);
   }
 
   @Delete(':id')

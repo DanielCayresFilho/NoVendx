@@ -208,6 +208,9 @@ export const WS_EVENTS = {
   OPERATOR_STATUS: 'operator_status',
   METRICS_UPDATE: 'metrics_update',
   LINE_STATUS: 'line_status',
+  LINE_BANNED: 'line-banned',
+  LINE_ASSIGNED: 'line-assigned',
+  MESSAGE_ERROR: 'message-error',
 } as const;
 
 export type WSEventType = typeof WS_EVENTS[keyof typeof WS_EVENTS];

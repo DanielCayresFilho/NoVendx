@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Send, FileText, MessageCircle, ArrowRight, ArrowLeft, Loader2, Wifi, WifiOff, Edit, UserCheck, X, Check } from "lucide-react";
+import { Plus, Send, FileText, MessageCircle, ArrowRight, ArrowLeft, Loader2, Wifi, WifiOff, Edit, UserCheck, X, Check, Phone, AlertTriangle } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
@@ -69,6 +69,15 @@ export default function Atendimento() {
   const [editContactIsCPC, setEditContactIsCPC] = useState(false);
   const [isSavingContact, setIsSavingContact] = useState(false);
   const previousConversationsRef = useRef<ConversationGroup[]>([]);
+  
+  // Estado para notificação de linha banida
+  const [lineBannedNotification, setLineBannedNotification] = useState<{
+    bannedLinePhone: string;
+    newLinePhone: string | null;
+    contactsToRecall: Array<{ phone: string; name: string }>;
+    message: string;
+  } | null>(null);
+  const [isRecallingContact, setIsRecallingContact] = useState<string | null>(null);
 
   // Subscribe to new messages in real-time
   useRealtimeSubscription(WS_EVENTS.NEW_MESSAGE, (data: any) => {
@@ -244,6 +253,26 @@ export default function Atendimento() {
         duration: data.hoursRemaining ? 8000 : 5000, // Mostrar por mais tempo se tiver horas restantes
       });
     }
+  }, [playErrorSound]);
+
+  // Subscribe to line-banned event
+  useRealtimeSubscription(WS_EVENTS.LINE_BANNED, (data: any) => {
+    console.log('[Atendimento] Line banned notification received:', data);
+    playErrorSound();
+    
+    setLineBannedNotification({
+      bannedLinePhone: data.bannedLinePhone || 'N/A',
+      newLinePhone: data.newLinePhone || null,
+      contactsToRecall: data.contactsToRecall || [],
+      message: data.message || 'Sua linha foi banida.',
+    });
+    
+    toast({
+      title: "⚠️ Linha Banida",
+      description: data.message || 'Sua linha foi banida. Verifique os contatos para rechamar.',
+      variant: "destructive",
+      duration: 10000,
+    });
   }, [playErrorSound]);
 
   const scrollToBottom = () => {
@@ -1035,6 +1064,174 @@ export default function Atendimento() {
           )}
         </GlassCard>
       </div>
+
+      {/* Dialog de Notificação de Linha Banida */}
+      <Dialog open={!!lineBannedNotification} onOpenChange={(open) => !open && setLineBannedNotification(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Linha Banida
+            </DialogTitle>
+            <DialogDescription>
+              {lineBannedNotification?.message}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="p-4 bg-muted rounded-lg">
+              <p className="text-sm font-medium mb-1">Linha banida:</p>
+              <p className="text-sm text-muted-foreground">{lineBannedNotification?.bannedLinePhone}</p>
+              {lineBannedNotification?.newLinePhone && (
+                <>
+                  <p className="text-sm font-medium mt-3 mb-1">Nova linha atribuída:</p>
+                  <p className="text-sm text-success">{lineBannedNotification.newLinePhone}</p>
+                </>
+              )}
+            </div>
+
+            {lineBannedNotification && lineBannedNotification.contactsToRecall.length > 0 && (
+              <div>
+                <p className="text-sm font-medium mb-3">
+                  Contatos para rechamar ({lineBannedNotification.contactsToRecall.length}):
+                </p>
+                <ScrollArea className="h-[300px] pr-4">
+                  <div className="space-y-2">
+                    {lineBannedNotification.contactsToRecall.map((contact) => (
+                      <div
+                        key={contact.phone}
+                        className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">{contact.name}</p>
+                          <p className="text-xs text-muted-foreground">{contact.phone}</p>
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={async () => {
+                            if (isRecallingContact === contact.phone) return;
+                            
+                            setIsRecallingContact(contact.phone);
+                            try {
+                              await conversationsService.recallContact(contact.phone);
+                              toast({
+                                title: "✅ Contato rechamado",
+                                description: `Conversa reiniciada com ${contact.name}`,
+                              });
+                              
+                              // Recarregar conversas
+                              await loadConversations();
+                              
+                              // Selecionar a conversa recém-criada
+                              const updatedConversations = await conversationsService.getActive();
+                              const newConv = updatedConversations.find(c => c.contactPhone === contact.phone);
+                              if (newConv) {
+                                const grouped = await loadConversations();
+                                const found = grouped.find(c => c.contactPhone === contact.phone);
+                                if (found) {
+                                  setSelectedConversation(found);
+                                }
+                              }
+                              
+                              // Remover da lista de contatos para rechamar
+                              setLineBannedNotification(prev => {
+                                if (!prev) return null;
+                                const updated = prev.contactsToRecall.filter(c => c.phone !== contact.phone);
+                                if (updated.length === 0) {
+                                  return null; // Fechar dialog se não houver mais contatos
+                                }
+                                return { ...prev, contactsToRecall: updated };
+                              });
+                            } catch (error) {
+                              toast({
+                                title: "Erro ao rechamar contato",
+                                description: error instanceof Error ? error.message : "Erro desconhecido",
+                                variant: "destructive",
+                              });
+                            } finally {
+                              setIsRecallingContact(null);
+                            }
+                          }}
+                          disabled={isRecallingContact === contact.phone || !!isRecallingContact}
+                        >
+                          {isRecallingContact === contact.phone ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Rechamando...
+                            </>
+                          ) : (
+                            <>
+                              <Phone className="mr-2 h-4 w-4" />
+                              Rechamar
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
+
+            {lineBannedNotification && lineBannedNotification.contactsToRecall.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                Nenhum contato para rechamar.
+              </p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setLineBannedNotification(null)}
+            >
+              Fechar
+            </Button>
+            {lineBannedNotification && lineBannedNotification.contactsToRecall.length > 0 && (
+              <Button
+                onClick={async () => {
+                  // Rechamar todos os contatos
+                  if (!lineBannedNotification) return;
+                  
+                  const contacts = [...lineBannedNotification.contactsToRecall];
+                  for (const contact of contacts) {
+                    try {
+                      setIsRecallingContact(contact.phone);
+                      await conversationsService.recallContact(contact.phone);
+                      await new Promise(resolve => setTimeout(resolve, 500)); // Pequeno delay entre chamadas
+                    } catch (error) {
+                      console.error(`Erro ao rechamar ${contact.phone}:`, error);
+                    } finally {
+                      setIsRecallingContact(null);
+                    }
+                  }
+                  
+                  toast({
+                    title: "✅ Contatos rechamados",
+                    description: `${contacts.length} contato(s) rechamado(s) com sucesso`,
+                  });
+                  
+                  await loadConversations();
+                  setLineBannedNotification(null);
+                }}
+                disabled={!!isRecallingContact}
+              >
+                {isRecallingContact ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Rechamando todos...
+                  </>
+                ) : (
+                  <>
+                    <Phone className="mr-2 h-4 w-4" />
+                    Rechamar Todos
+                  </>
+                )}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 }

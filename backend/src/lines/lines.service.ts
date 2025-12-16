@@ -484,6 +484,35 @@ export class LinesService {
     if (operatorIds.length > 0) {
       console.log(`🔄 [handleBannedLine] Desvinculando ${operatorIds.length} operador(es) da linha banida ${lineId}`);
 
+      // Buscar conversas ativas (não tabuladas) da linha banida, agrupadas por operador
+      const activeConversations = await this.prisma.conversation.findMany({
+        where: {
+          userLine: lineId,
+          tabulation: null, // Apenas conversas ativas
+          userId: { in: operatorIds }, // Apenas dos operadores desta linha
+        },
+        select: {
+          contactPhone: true,
+          contactName: true,
+          userId: true,
+        },
+        distinct: ['contactPhone', 'userId'], // Evitar duplicatas
+      });
+
+      // Agrupar contatos por operador
+      const contactsByOperator = new Map<number, Array<{ phone: string; name: string }>>();
+      activeConversations.forEach(conv => {
+        if (conv.userId) {
+          if (!contactsByOperator.has(conv.userId)) {
+            contactsByOperator.set(conv.userId, []);
+          }
+          contactsByOperator.get(conv.userId)!.push({
+            phone: conv.contactPhone,
+            name: conv.contactName,
+          });
+        }
+      });
+
       // Desvincular todos os operadores da tabela LineOperator
       await this.prisma.lineOperator.deleteMany({
         where: { lineId },
@@ -532,8 +561,34 @@ export class LinesService {
           // Vincular nova linha ao operador usando a tabela LineOperator
           await this.assignOperatorToLine(availableLine.id, operatorId);
           console.log(`✅ [handleBannedLine] Linha ${availableLine.phone} atribuída ao operador ${operator.name} (ID: ${operatorId})`);
+          
+          // Notificar operador sobre nova linha atribuída
+          if (this.websocketGateway) {
+            const contactsToRecall = contactsByOperator.get(operatorId) || [];
+            this.websocketGateway.emitToUser(operatorId, 'line-banned', {
+              bannedLineId: lineId,
+              bannedLinePhone: line.phone,
+              newLineId: availableLine.id,
+              newLinePhone: availableLine.phone,
+              contactsToRecall: contactsToRecall,
+              message: `Sua linha foi banida. Uma nova linha foi atribuída. Você tem ${contactsToRecall.length} contato(s) para rechamar.`,
+            });
+          }
         } else {
           console.warn(`⚠️ [handleBannedLine] Nenhuma linha disponível para substituir a linha banida para o operador ${operator?.name || operatorId}`);
+          
+          // Notificar operador mesmo sem nova linha (para que ele saiba que precisa rechamar)
+          if (this.websocketGateway) {
+            const contactsToRecall = contactsByOperator.get(operatorId) || [];
+            this.websocketGateway.emitToUser(operatorId, 'line-banned', {
+              bannedLineId: lineId,
+              bannedLinePhone: line.phone,
+              newLineId: null,
+              newLinePhone: null,
+              contactsToRecall: contactsToRecall,
+              message: `Sua linha foi banida. Você tem ${contactsToRecall.length} contato(s) para rechamar quando receber uma nova linha.`,
+            });
+          }
         }
       }
     } else if (line.linkedTo) {
