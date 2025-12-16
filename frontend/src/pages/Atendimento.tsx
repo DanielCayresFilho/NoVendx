@@ -72,6 +72,9 @@ export default function Atendimento() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   
+  // Estado para alternar entre conversas tabuladas e não tabuladas
+  const [showTabulated, setShowTabulated] = useState(false);
+  
   // Estado para notificação de linha banida
   const [lineBannedNotification, setLineBannedNotification] = useState<{
     bannedLinePhone: string;
@@ -262,7 +265,9 @@ export default function Atendimento() {
 
   const loadConversations = useCallback(async () => {
     try {
-      const data = await conversationsService.getActive();
+      const data = showTabulated 
+        ? await conversationsService.getTabulated()
+        : await conversationsService.getActive();
       
       // Group conversations by contact phone
       const groupedMap = new Map<string, ConversationGroup>();
@@ -316,7 +321,25 @@ export default function Atendimento() {
     } finally {
       setIsLoading(false);
     }
-  }, []); // Sem dependências - usa ref em vez de state
+  }, [showTabulated]); // Adicionar showTabulated como dependência
+
+  // Subscribe to line reallocation (depois de loadConversations estar definido)
+  useRealtimeSubscription('line-reallocated', (data: any) => {
+    console.log('[Atendimento] Line reallocated:', data);
+    if (data?.newLinePhone) {
+      playSuccessSound();
+      toast({
+        title: "Linha realocada",
+        description: data.message || `Nova linha ${data.newLinePhone} foi atribuída automaticamente.`,
+        duration: 8000,
+      });
+      
+      // Recarregar conversas para atualizar com a nova linha
+      setTimeout(() => {
+        loadConversations();
+      }, 1000);
+    }
+  }, [playSuccessSound, loadConversations]);
 
   const loadTabulations = useCallback(async () => {
     try {
@@ -727,6 +750,14 @@ export default function Atendimento() {
           <div className="p-4 border-b border-border/50 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <h2 className="font-semibold text-foreground">Atendimentos</h2>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowTabulated(!showTabulated)}
+                className="ml-2"
+              >
+                {showTabulated ? 'Não Tabuladas' : 'Tabuladas'}
+              </Button>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>

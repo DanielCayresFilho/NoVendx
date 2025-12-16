@@ -345,5 +345,229 @@ export class ControlPanelService {
       },
     });
   }
+
+  // Atribuição em massa de linhas aos operadores
+  async assignLinesToAllOperators(): Promise<{
+    success: boolean;
+    assigned: number;
+    skipped: number;
+    details: Array<{
+      operatorName: string;
+      operatorId: number;
+      segment: number | null;
+      linePhone: string | null;
+      lineId: number | null;
+      status: 'assigned' | 'skipped' | 'already_has_line';
+      reason?: string;
+    }>;
+  }> {
+    // Buscar todos os operadores online
+    const operators = await this.prisma.user.findMany({
+      where: {
+        role: 'operator',
+        status: 'Online',
+      },
+      orderBy: {
+        segment: 'asc',
+      },
+    });
+
+    const results = {
+      success: true,
+      assigned: 0,
+      skipped: 0,
+      details: [] as Array<{
+        operatorName: string;
+        operatorId: number;
+        segment: number | null;
+        linePhone: string | null;
+        lineId: number | null;
+        status: 'assigned' | 'skipped' | 'already_has_line';
+        reason?: string;
+      }>,
+    };
+
+    // Agrupar operadores por segmento
+    const operatorsBySegment = new Map<number | null, typeof operators>();
+    for (const operator of operators) {
+      const segment = operator.segment;
+      if (!operatorsBySegment.has(segment)) {
+        operatorsBySegment.set(segment, []);
+      }
+      operatorsBySegment.get(segment)!.push(operator);
+    }
+
+    // Processar cada segmento
+    for (const [segment, segmentOperators] of operatorsBySegment.entries()) {
+      // Buscar linhas disponíveis para este segmento
+      let availableLines = await this.prisma.linesStock.findMany({
+        where: {
+          lineStatus: 'active',
+          segment: segment || undefined,
+        },
+        orderBy: {
+          phone: 'asc',
+        },
+      });
+
+      // Se não encontrou linhas do segmento, buscar linhas padrão
+      if (availableLines.length === 0 && segment !== null) {
+        const defaultSegment = await this.prisma.segment.findUnique({
+          where: { name: 'Padrão' },
+        });
+
+        if (defaultSegment) {
+          availableLines = await this.prisma.linesStock.findMany({
+            where: {
+              lineStatus: 'active',
+              segment: defaultSegment.id,
+            },
+            orderBy: {
+              phone: 'asc',
+            },
+          });
+        }
+      }
+
+      if (availableLines.length === 0) {
+        // Nenhuma linha disponível para este segmento
+        for (const operator of segmentOperators) {
+          results.skipped++;
+          results.details.push({
+            operatorName: operator.name,
+            operatorId: operator.id,
+            segment: operator.segment,
+            linePhone: null,
+            lineId: null,
+            status: 'skipped',
+            reason: 'Nenhuma linha disponível para o segmento',
+          });
+        }
+        continue;
+      }
+
+      // Distribuir linhas aos operadores (regra 2x1)
+      let lineIndex = 0;
+      for (const operator of segmentOperators) {
+        // Verificar se operador já tem linha
+        let currentLineId = operator.line;
+        if (!currentLineId) {
+          const lineOperator = await (this.prisma as any).lineOperator.findFirst({
+            where: { userId: operator.id },
+          });
+          currentLineId = lineOperator?.lineId || null;
+        }
+
+        if (currentLineId) {
+          // Operador já tem linha
+          const currentLine = await this.prisma.linesStock.findUnique({
+            where: { id: currentLineId },
+          });
+          results.skipped++;
+          results.details.push({
+            operatorName: operator.name,
+            operatorId: operator.id,
+            segment: operator.segment,
+            linePhone: currentLine?.phone || null,
+            lineId: currentLineId,
+            status: 'already_has_line',
+            reason: 'Operador já possui linha atribuída',
+          });
+          continue;
+        }
+
+        // Encontrar próxima linha disponível (com menos de 2 operadores)
+        let assignedLine = null;
+        let attempts = 0;
+        const maxAttempts = availableLines.length * 2; // Evitar loop infinito
+
+        while (!assignedLine && attempts < maxAttempts) {
+          const candidateLine = availableLines[lineIndex % availableLines.length];
+          
+          // Verificar quantos operadores já estão vinculados
+          const operatorsCount = await (this.prisma as any).lineOperator.count({
+            where: { lineId: candidateLine.id },
+          });
+
+          if (operatorsCount < 2) {
+            // Verificar se operador já está vinculado a esta linha
+            const existing = await (this.prisma as any).lineOperator.findUnique({
+              where: {
+                lineId_userId: {
+                  lineId: candidateLine.id,
+                  userId: operator.id,
+                },
+              },
+            });
+
+            if (!existing) {
+              assignedLine = candidateLine;
+            }
+          }
+
+          lineIndex++;
+          attempts++;
+        }
+
+        if (assignedLine) {
+          // Vincular operador à linha
+          await (this.prisma as any).lineOperator.create({
+            data: {
+              lineId: assignedLine.id,
+              userId: operator.id,
+            },
+          });
+
+          // Atualizar campos legacy
+          await this.prisma.user.update({
+            where: { id: operator.id },
+            data: { line: assignedLine.id },
+          });
+
+          // Se for o primeiro operador da linha, atualizar linkedTo
+          const operatorsCount = await (this.prisma as any).lineOperator.count({
+            where: { lineId: assignedLine.id },
+          });
+          if (operatorsCount === 1) {
+            await this.prisma.linesStock.update({
+              where: { id: assignedLine.id },
+              data: { linkedTo: operator.id },
+            });
+          }
+
+          // Se linha padrão foi atribuída e operador tem segmento, atualizar segmento da linha
+          if (assignedLine.segment !== operator.segment && operator.segment) {
+            await this.prisma.linesStock.update({
+              where: { id: assignedLine.id },
+              data: { segment: operator.segment },
+            });
+          }
+
+          results.assigned++;
+          results.details.push({
+            operatorName: operator.name,
+            operatorId: operator.id,
+            segment: operator.segment,
+            linePhone: assignedLine.phone,
+            lineId: assignedLine.id,
+            status: 'assigned',
+          });
+        } else {
+          results.skipped++;
+          results.details.push({
+            operatorName: operator.name,
+            operatorId: operator.id,
+            segment: operator.segment,
+            linePhone: null,
+            lineId: null,
+            status: 'skipped',
+            reason: 'Nenhuma linha disponível (todas com 2 operadores)',
+          });
+        }
+      }
+    }
+
+    return results;
+  }
 }
 

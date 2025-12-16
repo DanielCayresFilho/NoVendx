@@ -80,5 +80,12 @@ export class ControlPanelController {
     await this.controlPanelService.markAsCPC(phone, body.isCPC);
     return { success: true };
   }
+
+  // Atribuição em massa de linhas aos operadores
+  @Post('assign-lines-mass')
+  @Roles(Role.admin, Role.supervisor)
+  async assignLinesMass() {
+    return this.controlPanelService.assignLinesToAllOperators();
+  }
 }
 

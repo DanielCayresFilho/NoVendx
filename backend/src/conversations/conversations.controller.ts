@@ -65,6 +65,27 @@ export class ConversationsController {
     return this.conversationsService.findActiveConversations(user.line, user.id);
   }
 
+  @Get('tabulated')
+  @Roles(Role.admin, Role.supervisor, Role.operator)
+  getTabulatedConversations(@CurrentUser() user: any) {
+    console.log(`📋 [GET /conversations/tabulated] Usuário: ${user.name} (${user.role}), line: ${user.line}, segment: ${user.segment}`);
+    
+    // Admin vê TODAS as conversas tabuladas (sem filtro)
+    if (user.role === Role.admin) {
+      return this.conversationsService.findAll({ tabulation: { not: null } });
+    }
+    // Supervisor vê apenas conversas tabuladas do seu segmento
+    if (user.role === Role.supervisor) {
+      return this.conversationsService.findAll({ segment: user.segment, tabulation: { not: null } });
+    }
+    // Operador: se não tiver linha atribuída, não retorna nada
+    if (!user.line) {
+      return [];
+    }
+    // Filtrar por linha e pelo operador específico (userId)
+    return this.conversationsService.findTabulatedConversations(user.line, user.id);
+  }
+
   @Get('segment/:segment')
   @Roles(Role.supervisor, Role.admin)
   getBySegment(

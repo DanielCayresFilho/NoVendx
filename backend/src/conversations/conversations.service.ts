@@ -84,6 +84,31 @@ export class ConversationsService {
     return conversations;
   }
 
+  async findTabulatedConversations(userLine?: number, userId?: number) {
+    const where: any = {
+      tabulation: { not: null },
+    };
+
+    if (userLine) {
+      where.userLine = userLine;
+    }
+
+    // Se for operador, garantir que só veja suas próprias conversas (userId específico)
+    if (userId) {
+      where.userId = userId;
+    }
+
+    // Retornar TODAS as mensagens tabuladas (o frontend vai agrupar)
+    const conversations = await this.prisma.conversation.findMany({
+      where,
+      orderBy: {
+        datetime: 'asc', // Ordem cronológica para histórico
+      },
+    });
+
+    return conversations;
+  }
+
   async findOne(id: number) {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id },

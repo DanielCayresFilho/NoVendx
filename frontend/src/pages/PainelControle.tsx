@@ -11,7 +11,8 @@ import {
   AlertTriangle,
   Timer,
   RotateCcw,
-  Repeat
+  Repeat,
+  Users
 } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { MainLayout } from "@/components/layout/MainLayout";
@@ -42,6 +43,7 @@ export default function PainelControle() {
   const [settings, setSettings] = useState<ControlPanelSettings | null>(null);
   const [newBlockPhrase, setNewBlockPhrase] = useState("");
   const [isAddingPhrase, setIsAddingPhrase] = useState(false);
+  const [isAssigningLines, setIsAssigningLines] = useState(false);
 
   // Carregar segmentos e tabulações
   useEffect(() => {
@@ -199,19 +201,55 @@ export default function PainelControle() {
                 ))}
               </SelectContent>
             </Select>
-            <Button onClick={handleSave} disabled={isSaving}>
-              {isSaving ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Salvando...
-                </>
-              ) : (
-                <>
-                  <Save className="mr-2 h-4 w-4" />
-                  Salvar Configurações
-                </>
-              )}
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                onClick={async () => {
+                  setIsAssigningLines(true);
+                  try {
+                    const result = await controlPanelService.assignLinesMass();
+                    toast({
+                      title: "Atribuição concluída",
+                      description: `${result.assigned} operador(es) receberam linha(s). ${result.skipped} operador(es) foram pulados.`,
+                    });
+                  } catch (error) {
+                    toast({
+                      title: "Erro",
+                      description: error instanceof Error ? error.message : "Erro ao atribuir linhas",
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setIsAssigningLines(false);
+                  }
+                }}
+                disabled={isAssigningLines}
+              >
+                {isAssigningLines ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Atribuindo...
+                  </>
+                ) : (
+                  <>
+                    <Users className="mr-2 h-4 w-4" />
+                    Atribuir Linhas em Massa
+                  </>
+                )}
+              </Button>
+              <Button onClick={handleSave} disabled={isSaving}>
+                {isSaving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    Salvar Configurações
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
 

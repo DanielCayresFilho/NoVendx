@@ -633,12 +633,36 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         stack: error.stack,
       });
       
-      // Detectar timeout específico
+      // Detectar timeout específico - realocar linha automaticamente
       if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-        const timeoutMessage = 'A requisição demorou muito para responder. Tente novamente.';
-        console.error('⏱️ [WebSocket] Timeout na requisição para Evolution API');
-        client.emit('message-error', { error: timeoutMessage });
-        return { error: timeoutMessage };
+        console.error('⏱️ [WebSocket] Timeout na requisição para Evolution API - Realocando linha...');
+        
+        // Realocar linha para o operador
+        const realocationResult = await this.reallocateLineForOperator(user.id, user.segment);
+        
+        if (realocationResult.success) {
+          const timeoutMessage = `A requisição demorou muito. Nova linha ${realocationResult.newLinePhone} foi atribuída automaticamente. Tente novamente.`;
+          console.log(`✅ [WebSocket] Linha realocada: ${realocationResult.oldLinePhone} → ${realocationResult.newLinePhone}`);
+          
+          // Atualizar user object
+          user.line = realocationResult.newLineId;
+          
+          // Notificar o operador sobre a nova linha
+          client.emit('line-reallocated', {
+            oldLinePhone: realocationResult.oldLinePhone,
+            newLinePhone: realocationResult.newLinePhone,
+            newLineId: realocationResult.newLineId,
+            message: timeoutMessage,
+          });
+          
+          client.emit('message-error', { error: timeoutMessage });
+          return { error: timeoutMessage };
+        } else {
+          const timeoutMessage = 'A requisição demorou muito para responder. Não foi possível realocar linha. Tente novamente mais tarde.';
+          console.error('❌ [WebSocket] Falha ao realocar linha:', realocationResult.reason);
+          client.emit('message-error', { error: timeoutMessage });
+          return { error: timeoutMessage };
+        }
       }
       
       // Detectar erro 504 Gateway Timeout
@@ -699,6 +723,137 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       }
     }
     return null;
+  }
+
+  // Método para realocar linha quando houver problemas (timeout, etc)
+  private async reallocateLineForOperator(userId: number, userSegment: number | null): Promise<{
+    success: boolean;
+    oldLinePhone?: string;
+    newLinePhone?: string;
+    newLineId?: number;
+    reason?: string;
+  }> {
+    try {
+      // Buscar operador atual
+      const operator = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!operator || operator.role !== 'operator') {
+        return { success: false, reason: 'Operador não encontrado' };
+      }
+
+      // Buscar linha atual
+      let currentLineId = operator.line;
+      if (!currentLineId) {
+        // Tentar buscar na tabela LineOperator
+        const lineOperator = await (this.prisma as any).lineOperator.findFirst({
+          where: { userId },
+        });
+        currentLineId = lineOperator?.lineId || null;
+      }
+
+      let oldLinePhone = null;
+      if (currentLineId) {
+        const oldLine = await this.prisma.linesStock.findUnique({
+          where: { id: currentLineId },
+        });
+        oldLinePhone = oldLine?.phone || null;
+
+        // Remover operador da linha antiga
+        await (this.prisma as any).lineOperator.deleteMany({
+          where: { userId, lineId: currentLineId },
+        });
+      }
+
+      // Buscar nova linha disponível
+      let availableLine = null;
+
+      // 1. Primeiro, tentar buscar linha do mesmo segmento do operador
+      if (userSegment) {
+        const segmentLines = await this.prisma.linesStock.findMany({
+          where: {
+            lineStatus: 'active',
+            segment: userSegment,
+          },
+        });
+
+        availableLine = await this.findAvailableLineForOperator(segmentLines, userId);
+      }
+
+      // 2. Se não encontrou linha do segmento, buscar linha padrão
+      if (!availableLine) {
+        const defaultSegment = await this.prisma.segment.findUnique({
+          where: { name: 'Padrão' },
+        });
+
+        if (defaultSegment) {
+          const defaultLines = await this.prisma.linesStock.findMany({
+            where: {
+              lineStatus: 'active',
+              segment: defaultSegment.id,
+            },
+          });
+
+          availableLine = await this.findAvailableLineForOperator(defaultLines, userId);
+
+          // Se encontrou linha padrão e operador tem segmento, atualizar o segmento da linha
+          if (availableLine && userSegment) {
+            await this.prisma.linesStock.update({
+              where: { id: availableLine.id },
+              data: { segment: userSegment },
+            });
+          }
+        }
+      }
+
+      if (!availableLine) {
+        return { success: false, reason: 'Nenhuma linha disponível' };
+      }
+
+      // Verificar quantos operadores já estão vinculados
+      const currentOperatorsCount = await (this.prisma as any).lineOperator.count({
+        where: { lineId: availableLine.id },
+      });
+
+      if (currentOperatorsCount >= 2) {
+        return { success: false, reason: 'Linha já está com 2 operadores' };
+      }
+
+      // Vincular operador à nova linha
+      await (this.prisma as any).lineOperator.create({
+        data: {
+          lineId: availableLine.id,
+          userId: userId,
+        },
+      });
+
+      // Atualizar campos legacy para compatibilidade
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { line: availableLine.id },
+      });
+
+      if (currentOperatorsCount === 0) {
+        // Primeiro operador - atualizar linkedTo
+        await this.prisma.linesStock.update({
+          where: { id: availableLine.id },
+          data: { linkedTo: userId },
+        });
+      }
+
+      console.log(`✅ [WebSocket] Linha realocada para operador ${operator.name}: ${oldLinePhone || 'sem linha'} → ${availableLine.phone}`);
+
+      return {
+        success: true,
+        oldLinePhone: oldLinePhone || undefined,
+        newLinePhone: availableLine.phone,
+        newLineId: availableLine.id,
+      };
+    } catch (error: any) {
+      console.error('❌ [WebSocket] Erro ao realocar linha:', error);
+      return { success: false, reason: error.message || 'Erro desconhecido' };
+    }
   }
 
   // Método para emitir mensagens recebidas via webhook

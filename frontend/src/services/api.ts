@@ -520,6 +520,10 @@ export const conversationsService = {
     return apiRequest<Conversation[]>('/conversations/active');
   },
 
+  getTabulated: async (): Promise<Conversation[]> => {
+    return apiRequest<Conversation[]>('/conversations/tabulated');
+  },
+
   getBySegment: async (segment: number, tabulated?: boolean): Promise<Array<{ contactPhone: string; contactName: string; messages: Conversation[] }>> => {
     const query = tabulated !== undefined ? `?tabulated=${tabulated}` : '';
     return apiRequest(`/conversations/segment/${segment}${query}`);
@@ -1020,6 +1024,25 @@ export const controlPanelService = {
     return apiRequest(`/control-panel/mark-cpc/${encodeURIComponent(phone)}`, {
       method: 'POST',
       body: JSON.stringify({ isCPC }),
+    });
+  },
+
+  assignLinesMass: async (): Promise<{
+    success: boolean;
+    assigned: number;
+    skipped: number;
+    details: Array<{
+      operatorName: string;
+      operatorId: number;
+      segment: number | null;
+      linePhone: string | null;
+      lineId: number | null;
+      status: 'assigned' | 'skipped' | 'already_has_line';
+      reason?: string;
+    }>;
+  }> => {
+    return apiRequest('/control-panel/assign-lines-mass', {
+      method: 'POST',
     });
   },
 };
