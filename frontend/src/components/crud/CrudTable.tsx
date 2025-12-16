@@ -173,14 +173,30 @@ export function CrudTable<T extends { id: string }>({
     return value;
   }, []);
 
+  // Filter data based on search query
+  const filteredData = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return data;
+    }
+    
+    const query = searchQuery.toLowerCase().trim();
+    return data.filter((item) => {
+      // Search across all columns
+      return columns.some((col) => {
+        const value = getValue(item, String(col.key));
+        return String(value ?? '').toLowerCase().includes(query);
+      });
+    });
+  }, [data, searchQuery, columns, getValue]);
+
   // Pagination calculations
-  const totalItems = data.length;
+  const totalItems = filteredData.length;
   const totalPages = Math.ceil(totalItems / pageSize);
   
   const paginatedData = useMemo(() => {
     const startIndex = (currentPage - 1) * pageSize;
-    return data.slice(startIndex, startIndex + pageSize);
-  }, [data, currentPage, pageSize]);
+    return filteredData.slice(startIndex, startIndex + pageSize);
+  }, [filteredData, currentPage, pageSize]);
 
   const handlePageSizeChange = useCallback((value: string) => {
     setPageSize(Number(value));
@@ -252,11 +268,15 @@ export function CrudTable<T extends { id: string }>({
         </div>
 
         {/* Table */}
-        {data.length === 0 ? (
+        {filteredData.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <Package className="h-16 w-16 mb-4 opacity-50" />
-            <p className="text-lg font-medium">Nenhum registro encontrado</p>
-            <p className="text-sm">Clique em "Novo" para adicionar</p>
+            <p className="text-lg font-medium">
+              {searchQuery.trim() ? 'Nenhum resultado encontrado' : 'Nenhum registro encontrado'}
+            </p>
+            <p className="text-sm">
+              {searchQuery.trim() ? 'Tente uma busca diferente' : 'Clique em "Novo" para adicionar'}
+            </p>
           </div>
         ) : (
           <>

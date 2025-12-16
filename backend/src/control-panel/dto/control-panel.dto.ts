@@ -103,6 +103,12 @@ export class UpdateControlPanelDto {
   @IsNumber()
   @IsOptional()
   repescagemMaxAttempts?: number;
+
+  // Evolutions ativas - Controla quais evolutions podem ser usadas
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  activeEvolutions?: string[]; // Array de nomes de evolution (ex: ["Evolution01", "Evolution02"])
 }
 
 export class AddBlockPhraseDto {

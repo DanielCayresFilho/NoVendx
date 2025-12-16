@@ -87,5 +87,12 @@ export class ControlPanelController {
   async assignLinesMass() {
     return this.controlPanelService.assignLinesToAllOperators();
   }
+
+  // Desatribuir todas as linhas dos operadores e alterar todas as linhas para segmento "Padrão"
+  @Post('unassign-all-lines')
+  @Roles(Role.admin, Role.supervisor)
+  async unassignAllLines() {
+    return this.controlPanelService.unassignAllLines();
+  }
 }
 

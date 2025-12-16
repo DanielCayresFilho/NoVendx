@@ -979,6 +979,7 @@ export interface ControlPanelSettings {
   repescagemMaxMessages: number;
   repescagemCooldownHours: number;
   repescagemMaxAttempts: number;
+  activeEvolutions: string[] | null; // Array de nomes de evolution (null = todas ativas)
 }
 
 export const controlPanelService = {
@@ -1042,6 +1043,17 @@ export const controlPanelService = {
     }>;
   }> => {
     return apiRequest('/control-panel/assign-lines-mass', {
+      method: 'POST',
+    });
+  },
+
+  unassignAllLines: async (): Promise<{
+    success: boolean;
+    unassignedOperators: number;
+    linesUpdated: number;
+    message: string;
+  }> => {
+    return apiRequest('/control-panel/unassign-all-lines', {
       method: 'POST',
     });
   },

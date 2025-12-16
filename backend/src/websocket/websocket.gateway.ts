@@ -142,7 +142,9 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               },
             });
 
-            availableLine = await this.findAvailableLineForOperator(segmentLines, user.id, user.segment);
+            // Filtrar por evolutions ativas
+            const filteredLines = await this.controlPanelService.filterLinesByActiveEvolutions(segmentLines, user.segment);
+            availableLine = await this.findAvailableLineForOperator(filteredLines, user.id, user.segment);
           }
 
           // 2. Se não encontrou linha do segmento, buscar linha padrão (segmento "Padrão")
@@ -160,7 +162,9 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                 },
               });
 
-              availableLine = await this.findAvailableLineForOperator(defaultLines, user.id, user.segment);
+              // Filtrar por evolutions ativas
+              const filteredDefaultLines = await this.controlPanelService.filterLinesByActiveEvolutions(defaultLines, user.segment);
+              availableLine = await this.findAvailableLineForOperator(filteredDefaultLines, user.id, user.segment);
 
               // Se encontrou linha padrão e operador tem segmento, atualizar o segmento da linha
               if (availableLine && user.segment) {
@@ -826,7 +830,9 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
           },
         });
 
-        availableLine = await this.findAvailableLineForOperator(segmentLines, userId, userSegment);
+        // Filtrar por evolutions ativas
+        const filteredLines = await this.controlPanelService.filterLinesByActiveEvolutions(segmentLines, userSegment);
+        availableLine = await this.findAvailableLineForOperator(filteredLines, userId, userSegment);
       }
 
       // 2. Se não encontrou linha do segmento, buscar linha padrão
@@ -843,7 +849,9 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
             },
           });
 
-          availableLine = await this.findAvailableLineForOperator(defaultLines, userId, userSegment);
+          // Filtrar por evolutions ativas
+          const filteredDefaultLines = await this.controlPanelService.filterLinesByActiveEvolutions(defaultLines, userSegment);
+          availableLine = await this.findAvailableLineForOperator(filteredDefaultLines, userId, userSegment);
 
           // Se encontrou linha padrão e operador tem segmento, atualizar o segmento da linha
           if (availableLine && userSegment) {

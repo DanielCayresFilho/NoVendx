@@ -14,10 +14,99 @@ export class ReportsService {
   }
 
   /**
+   * Helper: Formatar data e hora como DD/MM/YYYY HH:MM:SS
+   */
+  private formatDateTime(date: Date): string {
+    const d = new Date(date);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const seconds = String(d.getSeconds()).padStart(2, '0');
+    return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+  }
+
+  /**
    * Helper: Formatar hora como HH:MM:SS
    */
   private formatTime(date: Date): string {
     return date.toISOString().split('T')[1].split('.')[0];
+  }
+
+  /**
+   * Helper: Normalizar texto para garantir encoding UTF-8 correto
+   * Remove problemas de encoding e garante que caracteres especiais sejam exibidos corretamente
+   */
+  private normalizeText(text: string | null | undefined): string | null {
+    if (!text) return null;
+    
+    try {
+      // Garantir que o texto está em UTF-8
+      if (typeof text !== 'string') {
+        text = String(text);
+      }
+      
+      // Normalizar Unicode (NFD -> NFC) para garantir caracteres compostos corretos
+      // Isso resolve problemas com acentos e caracteres especiais
+      let normalized = text.normalize('NFC');
+      
+      // Garantir que está em UTF-8 válido
+      // Se houver caracteres inválidos, tentar reparar
+      try {
+        // Forçar encoding UTF-8
+        const buffer = Buffer.from(normalized, 'utf8');
+        normalized = buffer.toString('utf8');
+      } catch (e) {
+        // Se falhar, tentar latin1 -> utf8 (para reparar caracteres corrompidos)
+        try {
+          const buffer = Buffer.from(text, 'latin1');
+          normalized = buffer.toString('utf8');
+          // Normalizar novamente após reparo
+          normalized = normalized.normalize('NFC');
+        } catch (e2) {
+          // Se ainda falhar, retornar original
+          console.warn('Erro ao normalizar texto:', e2);
+        }
+      }
+      
+      return normalized;
+    } catch (error) {
+      // Se houver erro, retornar texto original
+      console.warn('Erro ao normalizar texto:', error);
+      return text;
+    }
+  }
+
+  /**
+   * Helper: Normalizar objeto recursivamente, aplicando normalização em todos os valores string
+   */
+  private normalizeObject(obj: any): any {
+    if (obj === null || obj === undefined) {
+      return obj;
+    }
+    
+    if (Array.isArray(obj)) {
+      return obj.map(item => this.normalizeObject(item));
+    }
+    
+    if (typeof obj === 'object') {
+      const normalized: any = {};
+      for (const [key, value] of Object.entries(obj)) {
+        if (typeof value === 'string') {
+          normalized[key] = this.normalizeText(value);
+        } else {
+          normalized[key] = this.normalizeObject(value);
+        }
+      }
+      return normalized;
+    }
+    
+    if (typeof obj === 'string') {
+      return this.normalizeText(obj);
+    }
+    
+    return obj;
   }
 
   /**
@@ -112,7 +201,7 @@ export class ReportsService {
 
     // Se não houver dados, retornar registro vazio com cabeçalhos
     if (result.length === 0) {
-      return [{
+      return this.normalizeObject([{
         Segmento: '',
         Data: '',
         Hora: '',
@@ -124,10 +213,10 @@ export class ReportsService {
         'Tempo Médio Espera Total': '',
         'Tempo Médio Atendimento': '',
         'Tempo Médio Resposta': '',
-      }];
+      }]);
     }
 
-    return result;
+    return this.normalizeObject(result);
   }
 
   /**
@@ -208,7 +297,7 @@ export class ReportsService {
 
     // Se não houver dados, retornar registro vazio com cabeçalhos
     if (result.length === 0) {
-      return [{
+      return this.normalizeObject([{
         'Data Evento': '',
         'Descrição Evento': '',
         'Tipo de Evento': '',
@@ -229,10 +318,10 @@ export class ReportsService {
         'Carteira do Evento': '',
         'Valor da oportunidade': '',
         'Identificador da chamada de Voz': '',
-      }];
+      }]);
     }
 
-    return result;
+    return this.normalizeObject(result);
   }
 
   /**
@@ -303,7 +392,7 @@ export class ReportsService {
 
     // Se não houver dados, retornar registro vazio com cabeçalhos
     if (result.length === 0) {
-      return [{
+      return this.normalizeObject([{
         Contato: '',
         Identificador: '',
         Código: '',
@@ -320,10 +409,10 @@ export class ReportsService {
         'Usuário Solicitante': '',
         Carteira: '',
         'Teve retorno': '',
-      }];
+      }]);
     }
 
-    return result;
+    return this.normalizeObject(result);
   }
 
   /**
@@ -358,7 +447,7 @@ export class ReportsService {
       };
     });
 
-    return result;
+    return this.normalizeObject(result);
   }
 
   /**
@@ -487,7 +576,7 @@ export class ReportsService {
       return dateB.localeCompare(dateA);
     });
 
-    return result;
+    return this.normalizeObject(result);
   }
 
   /**
@@ -593,7 +682,7 @@ export class ReportsService {
       });
     });
 
-    return result;
+    return this.normalizeObject(result);
   }
 
   /**
@@ -686,7 +775,7 @@ export class ReportsService {
       });
     });
 
-    return result;
+    return this.normalizeObject(result);
   }
 
   /**
@@ -762,7 +851,7 @@ export class ReportsService {
       });
     });
 
-    return result;
+    return this.normalizeObject(result);
   }
 
   /**
@@ -845,7 +934,7 @@ export class ReportsService {
       });
     });
 
-    return result;
+    return this.normalizeObject(result);
   }
 
   /**
@@ -913,7 +1002,7 @@ export class ReportsService {
       });
     });
 
-    return result;
+    return this.normalizeObject(result);
   }
 
   /**
@@ -999,7 +1088,7 @@ export class ReportsService {
       };
     });
 
-    return result;
+    return this.normalizeObject(result);
   }
 
   /**
@@ -1082,7 +1171,7 @@ export class ReportsService {
       });
     });
 
-    return result;
+    return this.normalizeObject(result);
   }
 
   /**
@@ -1104,36 +1193,72 @@ export class ReportsService {
     const segments = await this.prisma.segment.findMany();
     const segmentMap = new Map(segments.map(s => [s.id, s]));
 
-    // Buscar todos os usuários que têm linhas vinculadas
-    const userIds = lines.filter(l => l.linkedTo).map(l => l.linkedTo!);
-    const users = await this.prisma.user.findMany({
+    // Buscar todos os operadores vinculados via LineOperator
+    const lineIds = lines.map(l => l.id);
+    const lineOperators = await (this.prisma as any).lineOperator.findMany({
       where: {
-        id: { in: userIds },
+        lineId: { in: lineIds },
       },
-      select: {
-        id: true,
-        name: true,
-        email: true,
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'asc', // Primeira atribuição primeiro
       },
     });
-    const userMap = new Map(users.map(u => [u.id, u]));
+
+    // Agrupar operadores por linha
+    const operatorsByLine = new Map<number, Array<{ user: any; createdAt: Date }>>();
+    lineOperators.forEach((lo: any) => {
+      if (!operatorsByLine.has(lo.lineId)) {
+        operatorsByLine.set(lo.lineId, []);
+      }
+      operatorsByLine.get(lo.lineId)!.push({
+        user: lo.user,
+        createdAt: lo.createdAt,
+      });
+    });
 
     const result = lines.map(line => {
       const segment = line.segment ? segmentMap.get(line.segment) : null;
-      const operador = line.linkedTo ? userMap.get(line.linkedTo) : null;
+      const operators = operatorsByLine.get(line.id) || [];
+      
+      // Ordenar por data de criação para pegar primeira e última
+      const sortedOperators = [...operators].sort((a, b) => 
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+      
+      // Primeira atribuição (mais antiga)
+      const firstAssignment = sortedOperators.length > 0 ? sortedOperators[0] : null;
+      // Última atribuição (mais recente)
+      const lastAssignment = sortedOperators.length > 0 ? sortedOperators[sortedOperators.length - 1] : null;
+      
+      // Formatar lista de operadores
+      const operadoresList = operators.map((op: any, index: number) => 
+        `${op.user.name} (${op.user.email})`
+      ).join('; ');
 
       return {
         id: line.id,
         Número: line.phone,
         Status: line.lineStatus === 'ban' ? 'Banida' : line.lineStatus === 'active' ? 'Ativa' : line.lineStatus || 'Desconhecido',
-        Segmento: segment?.name || 'Sem segmento',
-        'Operador Vinculado': operador ? `${operador.name} (${operador.email})` : 'Sem operador',
+        Segmento: this.normalizeText(segment?.name) || 'Sem segmento',
+        'Operador(es) Vinculado(s)': this.normalizeText(operadoresList) || 'Sem operador',
+        'Data e Hora da Primeira Atribuição': firstAssignment ? this.formatDateTime(firstAssignment.createdAt) : 'N/A',
+        'Data e Hora da Última Atribuição': lastAssignment ? this.formatDateTime(lastAssignment.createdAt) : 'N/A',
         'Data de Criação': this.formatDate(line.createdAt),
         'Data de Atualização': this.formatDate(line.updatedAt),
       };
     });
 
-    return result;
+    // Normalizar todos os campos de texto do resultado
+    return this.normalizeObject(result);
   }
 
   /**
@@ -1220,7 +1345,7 @@ export class ReportsService {
       });
     });
 
-    return result;
+    return this.normalizeObject(result);
   }
 
   /**
@@ -1320,6 +1445,6 @@ export class ReportsService {
       };
     });
 
-    return result;
+    return this.normalizeObject(result);
   }
 }

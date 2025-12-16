@@ -30,6 +30,14 @@ async function bootstrap() {
     }),
   );
 
+  // Middleware para garantir UTF-8 em todas as respostas JSON
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/reports')) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    }
+    next();
+  });
+
   const port = configService.get('PORT') || 3000;
   await app.listen(port);
   console.log(`🚀 Application is running on: http://localhost:${port}`);

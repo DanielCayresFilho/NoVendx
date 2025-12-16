@@ -28,12 +28,14 @@ export class ControlPanelService {
         repescagemMaxMessages: 2,
         repescagemCooldownHours: 24,
         repescagemMaxAttempts: 2,
+        activeEvolutions: null, // null = todas as evolutions ativas
       };
     }
 
     return {
       ...config,
       blockPhrases: config.blockPhrases ? JSON.parse(config.blockPhrases) : [],
+      activeEvolutions: (config as any).activeEvolutions ? JSON.parse((config as any).activeEvolutions) : null,
     };
   }
 
@@ -56,6 +58,11 @@ export class ControlPanelService {
       repescagemMaxMessages: dto.repescagemMaxMessages,
       repescagemCooldownHours: dto.repescagemCooldownHours,
       repescagemMaxAttempts: dto.repescagemMaxAttempts,
+      activeEvolutions: dto.activeEvolutions !== undefined 
+        ? (dto.activeEvolutions === null || dto.activeEvolutions.length === 0 
+            ? null 
+            : JSON.stringify(dto.activeEvolutions))
+        : undefined,
     };
 
     // Remover campos undefined
@@ -73,6 +80,7 @@ export class ControlPanelService {
       return {
         ...updated,
         blockPhrases: updated.blockPhrases ? JSON.parse(updated.blockPhrases) : [],
+        activeEvolutions: (updated as any).activeEvolutions ? JSON.parse((updated as any).activeEvolutions) : null,
       };
     }
 
@@ -80,11 +88,13 @@ export class ControlPanelService {
       data: {
         ...data,
         blockPhrases: data.blockPhrases ?? '[]',
-      },
+        activeEvolutions: data.activeEvolutions ?? null,
+      } as any, // Temporário até migration ser aplicada
     });
     return {
       ...created,
       blockPhrases: created.blockPhrases ? JSON.parse(created.blockPhrases) : [],
+      activeEvolutions: (created as any).activeEvolutions ? JSON.parse((created as any).activeEvolutions) : null,
     };
   }
 
@@ -344,6 +354,25 @@ export class ControlPanelService {
         lastCPCAt: isCPC ? new Date() : null,
       },
     });
+  }
+
+  // Obter lista de evolutions ativas (para filtro de atribuição de linhas)
+  async getActiveEvolutions(segmentId?: number): Promise<string[] | null> {
+    const config = await this.findOne(segmentId);
+    return config.activeEvolutions || null; // null = todas ativas
+  }
+
+  // Filtrar linhas por evolutions ativas
+  async filterLinesByActiveEvolutions(lines: any[], segmentId?: number): Promise<any[]> {
+    const activeEvolutions = await this.getActiveEvolutions(segmentId);
+    
+    // Se não há restrição (null), retornar todas as linhas
+    if (!activeEvolutions || activeEvolutions.length === 0) {
+      return lines;
+    }
+    
+    // Filtrar apenas linhas das evolutions ativas
+    return lines.filter(line => activeEvolutions.includes(line.evolutionName));
   }
 
   // Atribuição em massa de linhas aos operadores
@@ -648,6 +677,81 @@ export class ControlPanelService {
     console.log(`📊 [Atribuição em Massa] Detalhes: ${results.details.filter(d => d.status === 'assigned').length} atribuídas, ${results.details.filter(d => d.status === 'already_has_line').length} já tinham linha, ${results.details.filter(d => d.status === 'skipped').length} puladas`);
 
     return results;
+  }
+
+  // Desatribuir todas as linhas dos operadores e alterar todas as linhas para segmento "Padrão"
+  async unassignAllLines(): Promise<{
+    success: boolean;
+    unassignedOperators: number;
+    linesUpdated: number;
+    message: string;
+  }> {
+    try {
+      console.log('🔄 [Desatribuição em Massa] Iniciando desatribuição de todas as linhas...');
+
+      // 1. Buscar segmento "Padrão"
+      const defaultSegment = await this.prisma.segment.findUnique({
+        where: { name: 'Padrão' },
+      });
+
+      if (!defaultSegment) {
+        throw new Error('Segmento "Padrão" não encontrado no banco de dados');
+      }
+
+      // 2. Desatribuir todos os operadores de todas as linhas
+      const deletedCount = await (this.prisma as any).lineOperator.deleteMany({});
+      console.log(`✅ [Desatribuição em Massa] ${deletedCount.count} vínculos de operadores removidos`);
+
+      // 3. Limpar campo legacy 'line' de todos os operadores
+      await this.prisma.user.updateMany({
+        where: {
+          role: 'operator',
+          line: { not: null },
+        },
+        data: {
+          line: null,
+        },
+      });
+      console.log('✅ [Desatribuição em Massa] Campo legacy "line" limpo de todos os operadores');
+
+      // 4. Atualizar todas as linhas ativas para o segmento "Padrão"
+      const updatedLines = await this.prisma.linesStock.updateMany({
+        where: {
+          lineStatus: 'active',
+          segment: { not: defaultSegment.id },
+        },
+        data: {
+          segment: defaultSegment.id,
+          linkedTo: null, // Limpar campo legacy também
+        },
+      });
+      console.log(`✅ [Desatribuição em Massa] ${updatedLines.count} linhas atualizadas para o segmento "Padrão"`);
+
+      // 5. Também atualizar linhas com segmento null
+      const updatedNullLines = await this.prisma.linesStock.updateMany({
+        where: {
+          lineStatus: 'active',
+          segment: null,
+        },
+        data: {
+          segment: defaultSegment.id,
+          linkedTo: null,
+        },
+      });
+      console.log(`✅ [Desatribuição em Massa] ${updatedNullLines.count} linhas com segmento null atualizadas para "Padrão"`);
+
+      const totalLinesUpdated = updatedLines.count + updatedNullLines.count;
+
+      return {
+        success: true,
+        unassignedOperators: deletedCount.count,
+        linesUpdated: totalLinesUpdated,
+        message: `Desatribuição concluída: ${deletedCount.count} operadores desvinculados, ${totalLinesUpdated} linhas atualizadas para segmento "Padrão"`,
+      };
+    } catch (error) {
+      console.error('❌ [Desatribuição em Massa] Erro:', error);
+      throw error;
+    }
   }
 }
 

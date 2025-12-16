@@ -40,6 +40,7 @@ interface ConversationGroup {
   isFromContact: boolean;
   unread?: boolean;
   messages: APIConversation[];
+  isTabulated?: boolean; // Indica se a conversa foi tabulada
 }
 
 export default function Atendimento() {
@@ -72,8 +73,9 @@ export default function Atendimento() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   
-  // Estado para alternar entre conversas tabuladas e não tabuladas
-  const [showTabulated, setShowTabulated] = useState(false);
+  // Estado para filtro de conversas
+  type FilterType = 'todas' | 'stand-by' | 'atendimento' | 'finalizadas';
+  const [conversationFilter, setConversationFilter] = useState<FilterType>('todas');
   
   // Estado para notificação de linha banida
   const [lineBannedNotification, setLineBannedNotification] = useState<{
@@ -265,15 +267,22 @@ export default function Atendimento() {
 
   const loadConversations = useCallback(async () => {
     try {
-      const data = showTabulated 
-        ? await conversationsService.getTabulated()
-        : await conversationsService.getActive();
+      // Carregar tanto conversas ativas quanto tabuladas para ter todos os dados
+      const [activeData, tabulatedData] = await Promise.all([
+        conversationsService.getActive(),
+        conversationsService.getTabulated().catch(() => []), // Se falhar, retorna array vazio
+      ]);
+      
+      // Combinar todos os dados
+      const allData = [...activeData, ...tabulatedData];
       
       // Group conversations by contact phone
       const groupedMap = new Map<string, ConversationGroup>();
       
-      data.forEach((conv) => {
+      allData.forEach((conv) => {
         const existing = groupedMap.get(conv.contactPhone);
+        const isTabulated = conv.tabulation !== null && conv.tabulation !== undefined;
+        
         if (existing) {
           existing.messages.push(conv);
           // Update last message if this one is more recent
@@ -283,6 +292,11 @@ export default function Atendimento() {
             existing.lastMessage = conv.message;
             existing.lastMessageTime = conv.datetime;
             existing.isFromContact = conv.sender === 'contact';
+            existing.isTabulated = isTabulated;
+          }
+          // Se qualquer mensagem for tabulada, a conversa é tabulada
+          if (isTabulated) {
+            existing.isTabulated = true;
           }
         } else {
           groupedMap.set(conv.contactPhone, {
@@ -291,13 +305,14 @@ export default function Atendimento() {
             lastMessage: conv.message,
             lastMessageTime: conv.datetime,
             isFromContact: conv.sender === 'contact',
+            isTabulated: isTabulated,
             messages: [conv],
           });
         }
       });
 
       // Sort messages within each group and groups by last message time
-      const groups = Array.from(groupedMap.values()).map(group => ({
+      let groups = Array.from(groupedMap.values()).map(group => ({
         ...group,
         messages: group.messages.sort((a, b) => 
           new Date(a.datetime).getTime() - new Date(b.datetime).getTime()
@@ -305,6 +320,28 @@ export default function Atendimento() {
       })).sort((a, b) => 
         new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
       );
+
+      // Aplicar filtro
+      if (conversationFilter !== 'todas') {
+        groups = groups.filter(group => {
+          if (conversationFilter === 'finalizadas') {
+            return group.isTabulated === true;
+          }
+          // Para stand-by e atendimento, só mostrar não tabuladas
+          if (group.isTabulated === true) {
+            return false;
+          }
+          if (conversationFilter === 'stand-by') {
+            // Stand By: última mensagem foi do operador (aguardando resposta do cliente)
+            return group.isFromContact === false;
+          }
+          if (conversationFilter === 'atendimento') {
+            // Atendimento: última mensagem foi do cliente (aguardando resposta do operador)
+            return group.isFromContact === true;
+          }
+          return true;
+        });
+      }
 
       setConversations(groups);
       
@@ -321,7 +358,7 @@ export default function Atendimento() {
     } finally {
       setIsLoading(false);
     }
-  }, [showTabulated]); // Adicionar showTabulated como dependência
+  }, [conversationFilter]); // Adicionar conversationFilter como dependência
 
   // Subscribe to line reallocation (depois de loadConversations estar definido)
   useRealtimeSubscription('line-reallocated', (data: any) => {
@@ -747,110 +784,136 @@ export default function Atendimento() {
         {/* Conversations List */}
         <GlassCard className="w-80 flex flex-col" padding="none">
           {/* Header */}
-          <div className="p-4 border-b border-border/50 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <h2 className="font-semibold text-foreground">Atendimentos</h2>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowTabulated(!showTabulated)}
-                className="ml-2"
-              >
-                {showTabulated ? 'Não Tabuladas' : 'Tabuladas'}
-              </Button>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${
-                      isRealtimeConnected 
-                        ? 'bg-success/10 text-success' 
-                        : 'bg-muted text-muted-foreground'
-                    }`}>
-                      {isRealtimeConnected ? (
-                        <Wifi className="h-3 w-3" />
-                      ) : (
-                        <WifiOff className="h-3 w-3" />
-                      )}
+          <div className="p-4 border-b border-border/50">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <h2 className="font-semibold text-foreground">Atendimentos</h2>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${
+                        isRealtimeConnected 
+                          ? 'bg-success/10 text-success' 
+                          : 'bg-muted text-muted-foreground'
+                      }`}>
+                        {isRealtimeConnected ? (
+                          <Wifi className="h-3 w-3" />
+                        ) : (
+                          <WifiOff className="h-3 w-3" />
+                        )}
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {isRealtimeConnected 
+                        ? 'Conectado em tempo real' 
+                        : 'Reconectando...'}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+              <Dialog open={isNewConversationOpen} onOpenChange={setIsNewConversationOpen}>
+                <DialogTrigger asChild>
+                  <Button size="icon" className="h-8 w-8">
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Nova Conversa</DialogTitle>
+                    <DialogDescription>
+                      Inicie uma nova conversa com um contato
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="name">Nome *</Label>
+                      <Input 
+                        id="name" 
+                        placeholder="Nome do contato"
+                        value={newContactName}
+                        onChange={(e) => setNewContactName(e.target.value)}
+                      />
                     </div>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {isRealtimeConnected 
-                      ? 'Conectado em tempo real' 
-                      : 'Reconectando...'}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+                    <div className="space-y-2">
+                      <Label htmlFor="phone">Telefone *</Label>
+                      <Input 
+                        id="phone" 
+                        placeholder="+55 11 99999-9999"
+                        value={newContactPhone}
+                        onChange={(e) => setNewContactPhone(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="cpf">CPF</Label>
+                      <Input 
+                        id="cpf" 
+                        placeholder="000.000.000-00"
+                        value={newContactCpf}
+                        onChange={(e) => setNewContactCpf(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="contract">Contrato</Label>
+                      <Input 
+                        id="contract" 
+                        placeholder="Número do contrato"
+                        value={newContactContract}
+                        onChange={(e) => setNewContactContract(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="message">Mensagem *</Label>
+                      <Input 
+                        id="message" 
+                        placeholder="Digite a mensagem que deseja enviar..."
+                        value={newContactMessage}
+                        onChange={(e) => setNewContactMessage(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsNewConversationOpen(false)}>
+                      Cancelar
+                    </Button>
+                    <Button onClick={handleNewConversation} disabled={!newContactMessage.trim()}>
+                      Enviar Mensagem
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
-            <Dialog open={isNewConversationOpen} onOpenChange={setIsNewConversationOpen}>
-              <DialogTrigger asChild>
-                <Button size="icon" className="h-8 w-8">
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Nova Conversa</DialogTitle>
-                  <DialogDescription>
-                    Inicie uma nova conversa com um contato
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Nome *</Label>
-                    <Input 
-                      id="name" 
-                      placeholder="Nome do contato"
-                      value={newContactName}
-                      onChange={(e) => setNewContactName(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Telefone *</Label>
-                    <Input 
-                      id="phone" 
-                      placeholder="+55 11 99999-9999"
-                      value={newContactPhone}
-                      onChange={(e) => setNewContactPhone(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="cpf">CPF</Label>
-                    <Input 
-                      id="cpf" 
-                      placeholder="000.000.000-00"
-                      value={newContactCpf}
-                      onChange={(e) => setNewContactCpf(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="contract">Contrato</Label>
-                    <Input 
-                      id="contract" 
-                      placeholder="Número do contrato"
-                      value={newContactContract}
-                      onChange={(e) => setNewContactContract(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="message">Mensagem *</Label>
-                    <Input 
-                      id="message" 
-                      placeholder="Digite a mensagem que deseja enviar..."
-                      value={newContactMessage}
-                      onChange={(e) => setNewContactMessage(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsNewConversationOpen(false)}>
-                    Cancelar
-                  </Button>
-                  <Button onClick={handleNewConversation} disabled={!newContactMessage.trim()}>
-                    Enviar Mensagem
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            
+            {/* Botões de Filtro */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                variant={conversationFilter === 'todas' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setConversationFilter('todas')}
+              >
+                Todas
+              </Button>
+              <Button
+                variant={conversationFilter === 'stand-by' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setConversationFilter('stand-by')}
+              >
+                Stand By
+              </Button>
+              <Button
+                variant={conversationFilter === 'atendimento' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setConversationFilter('atendimento')}
+              >
+                Atendimento
+              </Button>
+              <Button
+                variant={conversationFilter === 'finalizadas' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setConversationFilter('finalizadas')}
+              >
+                Finalizadas
+              </Button>
+            </div>
           </div>
 
           {/* Conversations */}

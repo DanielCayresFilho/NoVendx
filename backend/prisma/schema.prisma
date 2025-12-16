@@ -315,6 +315,9 @@ model ControlPanel {
   repescagemCooldownHours Int     @default(24) // Tempo de espera após bloqueio
   repescagemMaxAttempts   Int     @default(2) // Limite de repescagens (0 = ilimitado)
 
+  // Evolutions ativas - Controla quais evolutions podem ser usadas para atribuição de linhas
+  activeEvolutions String? @db.Text // JSON array de nomes de evolution (null = todas ativas)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

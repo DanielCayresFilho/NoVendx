@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma.service';
 import { CreateLineDto } from './dto/create-line.dto';
 import { UpdateLineDto } from './dto/update-line.dto';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
+import { ControlPanelService } from '../control-panel/control-panel.service';
 import axios from 'axios';
 
 @Injectable()
@@ -11,6 +12,7 @@ export class LinesService {
     private prisma: PrismaService,
     @Inject(forwardRef(() => WebsocketGateway))
     private websocketGateway: WebsocketGateway,
+    private controlPanelService: ControlPanelService,
   ) {}
 
   async create(createLineDto: CreateLineDto, createdBy?: number) {
@@ -544,7 +546,7 @@ export class LinesService {
         }
 
         // Buscar uma nova linha ativa do mesmo segmento
-        const availableLine = await this.prisma.linesStock.findFirst({
+        let availableLines = await this.prisma.linesStock.findMany({
           where: {
             lineStatus: 'active',
             segment: line.segment,
@@ -557,7 +559,12 @@ export class LinesService {
           },
         });
 
-        if (availableLine && availableLine.operators.length < 2) {
+        // Filtrar por evolutions ativas
+        availableLines = await this.controlPanelService.filterLinesByActiveEvolutions(availableLines, operator.segment || undefined);
+
+        const availableLine = availableLines.find(l => l.operators.length < 2);
+
+        if (availableLine) {
           // Vincular nova linha ao operador usando a tabela LineOperator
           await this.assignOperatorToLine(availableLine.id, operatorId);
           console.log(`✅ [handleBannedLine] Linha ${availableLine.phone} atribuída ao operador ${operator.name} (ID: ${operatorId})`);
@@ -806,6 +813,25 @@ export class LinesService {
 
   // Vincular operador à linha (máximo 2 operadores por linha)
   async assignOperatorToLine(lineId: number, userId: number): Promise<void> {
+    // Verificar se a linha existe e está ativa
+    const line = await this.prisma.linesStock.findUnique({
+      where: { id: lineId },
+    });
+
+    if (!line) {
+      throw new NotFoundException('Linha não encontrada');
+    }
+
+    if (line.lineStatus !== 'active') {
+      throw new BadRequestException('Linha não está ativa');
+    }
+
+    // Verificar se a linha está em uma evolution ativa
+    const activeEvolutions = await this.controlPanelService.getActiveEvolutions();
+    if (activeEvolutions && activeEvolutions.length > 0 && !activeEvolutions.includes(line.evolutionName)) {
+      throw new BadRequestException(`Linha da evolution '${line.evolutionName}' não está ativa para atribuição`);
+    }
+
     // Verificar se a linha já tem 2 operadores
     const currentOperators = await this.prisma.lineOperator.count({
       where: { lineId },
