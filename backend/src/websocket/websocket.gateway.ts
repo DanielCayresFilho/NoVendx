@@ -74,9 +74,60 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
       console.log(`✅ Usuário ${user.name} (${user.role}) conectado via WebSocket`);
 
-      // Se for operador sem linha, verificar se há linha disponível para vincular
-      if (user.role === 'operator' && !user.line) {
-        let availableLine = null;
+      // Se for operador, verificar e sincronizar linha
+      if (user.role === 'operator') {
+        // Se já tem linha no campo legacy, verificar se está na tabela LineOperator
+        if (user.line) {
+          const existingLink = await this.prisma.lineOperator.findFirst({
+            where: {
+              lineId: user.line,
+              userId: user.id,
+            },
+          });
+
+          if (!existingLink) {
+            // Sincronizar: criar entrada na tabela LineOperator
+            console.log(`🔄 [WebSocket] Sincronizando linha ${user.line} para operador ${user.name} na tabela LineOperator`);
+            
+            // Verificar se a linha ainda existe e está ativa
+            const line = await this.prisma.linesStock.findUnique({
+              where: { id: user.line },
+            });
+
+            if (line && line.lineStatus === 'active') {
+              // Verificar quantos operadores já estão vinculados
+              const currentOperatorsCount = await this.prisma.lineOperator.count({
+                where: { lineId: user.line },
+              });
+
+              if (currentOperatorsCount < 2) {
+                await this.prisma.lineOperator.create({
+                  data: {
+                    lineId: user.line,
+                    userId: user.id,
+                  },
+                });
+                console.log(`✅ [WebSocket] Linha ${user.line} sincronizada para operador ${user.name}`);
+              } else {
+                console.warn(`⚠️ [WebSocket] Linha ${user.line} já tem 2 operadores, não foi possível sincronizar para ${user.name}`);
+              }
+            } else {
+              console.warn(`⚠️ [WebSocket] Linha ${user.line} não existe ou não está ativa, removendo do operador ${user.name}`);
+              // Remover linha inválida do operador
+              await this.prisma.user.update({
+                where: { id: user.id },
+                data: { line: null },
+              });
+              user.line = null;
+            }
+          } else {
+            console.log(`✅ [WebSocket] Operador ${user.name} já está sincronizado na tabela LineOperator`);
+          }
+        }
+
+        // Se for operador sem linha, verificar se há linha disponível para vincular
+        if (!user.line) {
+          let availableLine = null;
 
         // 1. Primeiro, tentar buscar linha do mesmo segmento do operador
         if (user.segment) {

@@ -723,6 +723,41 @@ export class LinesService {
           offlineOperators.map(lo => `${lo.user.name} (${lo.user.status})`));
       }
       
+      // FALLBACK: Se não encontrou na tabela LineOperator, verificar campo legacy (linkedTo)
+      const line = await this.prisma.linesStock.findUnique({
+        where: { id: lineId },
+      });
+      
+      if (line && line.linkedTo) {
+        const legacyOperator = await this.prisma.user.findUnique({
+          where: { id: line.linkedTo },
+        });
+        
+        if (legacyOperator && legacyOperator.status === 'Online' && legacyOperator.role === 'operator') {
+          console.log(`✅ [LinesService] Fallback: Encontrado operador legacy online: ${legacyOperator.name} (ID: ${legacyOperator.id})`);
+          
+          // Sincronizar: criar entrada na tabela LineOperator
+          const existingLink = await this.prisma.lineOperator.findFirst({
+            where: {
+              lineId: lineId,
+              userId: legacyOperator.id,
+            },
+          });
+          
+          if (!existingLink) {
+            await this.prisma.lineOperator.create({
+              data: {
+                lineId: lineId,
+                userId: legacyOperator.id,
+              },
+            });
+            console.log(`✅ [LinesService] Operador legacy sincronizado na tabela LineOperator`);
+          }
+          
+          return legacyOperator.id;
+        }
+      }
+      
       return null;
     }
 
