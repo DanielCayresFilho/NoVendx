@@ -148,15 +148,6 @@ export default function Atendimento() {
     }
   }, [playMessageSound]); // Removido selectedConversation da dependência
 
-  // Subscribe to new conversations
-  useRealtimeSubscription(WS_EVENTS.NEW_CONVERSATION, (data: any) => {
-    console.log('[Atendimento] New conversation:', data);
-    if (data.conversation) {
-      playMessageSound();
-      loadConversations();
-    }
-  }, []);
-
   // Subscribe to message sent confirmation
   useRealtimeSubscription('message-sent', (data: any) => {
     console.log('[Atendimento] Message sent confirmation:', data);
@@ -255,26 +246,6 @@ export default function Atendimento() {
         duration: data.hoursRemaining ? 8000 : 5000, // Mostrar por mais tempo se tiver horas restantes
       });
     }
-  }, [playErrorSound]);
-
-  // Subscribe to line-banned event
-  useRealtimeSubscription(WS_EVENTS.LINE_BANNED, (data: any) => {
-    console.log('[Atendimento] Line banned notification received:', data);
-    playErrorSound();
-    
-    setLineBannedNotification({
-      bannedLinePhone: data.bannedLinePhone || 'N/A',
-      newLinePhone: data.newLinePhone || null,
-      contactsToRecall: data.contactsToRecall || [],
-      message: data.message || 'Sua linha foi banida.',
-    });
-    
-    toast({
-      title: "⚠️ Linha Banida",
-      description: data.message || 'Sua linha foi banida. Verifique os contatos para rechamar.',
-      variant: "destructive",
-      duration: 10000,
-    });
   }, [playErrorSound]);
 
   const scrollToBottom = () => {
@@ -1236,15 +1207,17 @@ export default function Atendimento() {
                               await loadConversations();
                               
                               // Selecionar a conversa recém-criada
-                              const updatedConversations = await conversationsService.getActive();
-                              const newConv = updatedConversations.find(c => c.contactPhone === contact.phone);
-                              if (newConv) {
-                                const grouped = await loadConversations();
-                                const found = grouped.find(c => c.contactPhone === contact.phone);
-                                if (found) {
-                                  setSelectedConversation(found);
-                                }
-                              }
+                              await loadConversations();
+                              // Usar setTimeout para garantir que o estado foi atualizado
+                              setTimeout(() => {
+                                setConversations(prev => {
+                                  const found = prev.find(c => c.contactPhone === contact.phone);
+                                  if (found) {
+                                    setSelectedConversation(found);
+                                  }
+                                  return prev;
+                                });
+                              }, 100);
                               
                               // Remover da lista de contatos para rechamar
                               setLineBannedNotification(prev => {

@@ -147,6 +147,17 @@ class RealtimeWebSocket {
     }
   }
 
+  reconnect() {
+    if (this.currentToken) {
+      console.log('[Socket.IO] Reconnecting...');
+      this.disconnect();
+      // Pequeno delay para garantir que a desconexão foi processada
+      setTimeout(() => {
+        this.connect(this.currentToken!);
+      }, 500);
+    }
+  }
+
   subscribe(eventType: string, handler: MessageHandler): () => void {
     if (!this.handlers.has(eventType)) {
       this.handlers.set(eventType, new Set());

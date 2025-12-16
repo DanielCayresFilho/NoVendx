@@ -91,27 +91,40 @@ export default function Dashboard() {
 
   const loadMetrics = useCallback(async () => {
     try {
-      // Fetch all metrics in parallel
-      const [conversations, operators, lines] = await Promise.all([
-        conversationsService.getActive().catch(() => []),
-        usersService.getOnlineOperators().catch(() => []),
-        linesService.list({ lineStatus: 'active' }).catch(() => []),
-      ]);
+      // Admin busca todas as métricas
+      // Supervisor e Operador não precisam buscar operadores online e linhas ativas
+      if (user?.role === 'admin') {
+        const [conversations, operators, lines] = await Promise.all([
+          conversationsService.getActive().catch(() => []),
+          usersService.getOnlineOperators().catch(() => []),
+          linesService.list({ lineStatus: 'active' }).catch(() => []),
+        ]);
 
-      // Group conversations by contact phone to get unique active conversations
-      const uniqueConversations = new Set(conversations.map(c => c.contactPhone));
+        // Group conversations by contact phone to get unique active conversations
+        const uniqueConversations = new Set(conversations.map(c => c.contactPhone));
 
-      setMetrics({
-        activeConversations: uniqueConversations.size,
-        onlineOperators: operators.length,
-        availableLines: lines.length,
-      });
+        setMetrics({
+          activeConversations: uniqueConversations.size,
+          onlineOperators: operators.length,
+          availableLines: lines.length,
+        });
+      } else {
+        // Supervisor e Operador: apenas conversas ativas
+        const conversations = await conversationsService.getActive().catch(() => []);
+        const uniqueConversations = new Set(conversations.map(c => c.contactPhone));
+
+        setMetrics({
+          activeConversations: uniqueConversations.size,
+          onlineOperators: 0, // Não mostrar
+          availableLines: 0, // Não mostrar
+        });
+      }
     } catch (error) {
       console.error('Error loading dashboard metrics:', error);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [user?.role]);
 
   const loadDailyStats = useCallback(async () => {
     try {
@@ -121,7 +134,7 @@ export default function Dashboard() {
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6); // 7 dias incluindo hoje
 
       // Buscar todas as conversas dos últimos 7 dias
-      const allConversations = await conversationsService.findAll({});
+      const allConversations = await conversationsService.list({});
       
       // Agrupar por dia
       const statsByDay = new Map<string, { conversations: Set<string>; messages: number; operators: Set<number> }>();
@@ -151,16 +164,26 @@ export default function Dashboard() {
         }
       });
 
-      // Buscar operadores online de cada dia (aproximação: usar dados atuais)
-      const onlineOperators = await usersService.getOnlineOperators();
-      const onlineCount = onlineOperators.length;
+      // Buscar operadores online de cada dia (apenas para admin)
+      let onlineCount = 0;
+      if (user?.role === 'admin') {
+        try {
+          const onlineOperators = await usersService.getOnlineOperators();
+          onlineCount = onlineOperators.length;
+        } catch (error) {
+          console.warn('Error loading online operators for stats:', error);
+          // Usar apenas o histórico se não conseguir buscar
+        }
+      }
 
       // Converter para array
       const statsArray: DailyStats[] = Array.from(statsByDay.entries()).map(([date, stats]) => ({
         date,
         conversations: stats.conversations.size,
         messages: stats.messages,
-        operators: Math.max(stats.operators.size, onlineCount), // Usar o maior entre histórico e atual
+        operators: user?.role === 'admin' 
+          ? Math.max(stats.operators.size, onlineCount) // Usar o maior entre histórico e atual (apenas admin)
+          : stats.operators.size, // Não-admin: usar apenas histórico
       }));
 
       setDailyStats(statsArray);
@@ -183,7 +206,7 @@ export default function Dashboard() {
     } finally {
       setIsLoadingChart(false);
     }
-  }, []);
+  }, [user?.role]);
 
   useEffect(() => {
     loadMetrics();
@@ -205,26 +228,31 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [loadMetrics, isRealtimeConnected]);
 
+  // Filtrar métricas baseado no role do usuário
+  // Admin vê tudo, Supervisor e Operador não veem "Linhas Ativas" e "Operadores Online"
   const metricsDisplay = [
     {
       label: "Conversas Ativas",
       value: isLoading ? "-" : metrics.activeConversations.toString(),
       color: "text-primary",
-      bgColor: "bg-primary/10"
+      bgColor: "bg-primary/10",
+      show: true, // Todos veem
     },
     {
       label: "Operadores Online",
       value: isLoading ? "-" : metrics.onlineOperators.toString(),
       color: "text-success",
-      bgColor: "bg-success/10"
+      bgColor: "bg-success/10",
+      show: user?.role === 'admin', // Apenas admin vê
     },
     {
       label: "Linhas Ativas",
       value: isLoading ? "-" : `${metrics.availableLines} ${metrics.availableLines === 1 ? 'linha' : 'linhas'}`,
       color: "text-cyan",
-      bgColor: "bg-cyan/10"
+      bgColor: "bg-cyan/10",
+      show: user?.role === 'admin', // Apenas admin vê
     }
-  ];
+  ].filter(metric => metric.show);
 
   const tags = [
     { label: "Tempo real", color: "bg-primary text-primary-foreground" },
