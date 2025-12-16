@@ -484,6 +484,10 @@ export class ControlPanelService {
         }
       }
 
+      // IMPORTANTE: Filtrar linhas por evolutions ativas ANTES de processar
+      availableLines = await this.filterLinesByActiveEvolutions(availableLines, segment || undefined);
+      console.log(`🔍 [Atribuição em Massa] Após filtrar por evolutions ativas: ${availableLines.length} linhas disponíveis para segmento ${segment || 'null'}`);
+
       console.log(`📊 [Atribuição em Massa] Segmento ${segment || 'null'}: ${segmentOperators.length} operadores, ${availableLines.length} linhas disponíveis`);
 
       if (availableLines.length === 0) {
