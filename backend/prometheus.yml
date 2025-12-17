@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 15s      # Coletar métricas a cada 15 segundos
+  evaluation_interval: 15s  # Avaliar regras a cada 15 segundos
+
+scrape_configs:
+  # Job para coletar métricas do backend NewVend
+  - job_name: 'newvend-backend'
+    static_configs:
+      # Para Docker Desktop (Mac/Windows)
+      - targets: ['host.docker.internal:3000']
+        labels:
+          instance: 'newvend-backend'
+          environment: 'development'
+    
+    # Para Linux/WSL, use uma dessas opções:
+    # - targets: ['172.17.0.1:3000']  # IP padrão do Docker bridge
+    # - targets: ['localhost:3000']   # Se rodando no mesmo host
+    # - targets: ['SEU_IP:3000']      # IP da sua máquina
+    
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+

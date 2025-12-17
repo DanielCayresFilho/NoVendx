@@ -1211,68 +1211,87 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
   ): Promise<{ success: boolean; conversation?: any; reason?: string }> {
     const maxRetries = 3;
     
+    console.log(`🔄 [WebSocket] Iniciando recuperação automática para operador ${user.name} (${user.id})`);
+    console.log(`📋 [WebSocket] Erro original: ${originalError.message || originalError.code || 'Desconhecido'}`);
+    
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       console.log(`🔄 [WebSocket] Tentativa de recuperação ${attempt}/${maxRetries}...`);
       
-      // 1. Realocar linha
-      const reallocationResult = await this.reallocateLineForOperator(user.id, user.segment);
-      
-      if (!reallocationResult.success) {
-        console.warn(`⚠️ [WebSocket] Falha ao realocar linha na tentativa ${attempt}:`, reallocationResult.reason);
-        if (attempt < maxRetries) {
-          // Aguardar um pouco antes de tentar novamente
-          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-          continue;
-        }
-        return { success: false, reason: 'Não foi possível realocar linha após múltiplas tentativas' };
-      }
-      
-      // 2. Atualizar user object com nova linha
-      user.line = reallocationResult.newLineId;
-      console.log(`✅ [WebSocket] Linha realocada: ${reallocationResult.oldLinePhone || 'sem linha'} → ${reallocationResult.newLinePhone}`);
-      
-      // 3. Buscar dados da nova linha
-      const newLine = await this.prisma.linesStock.findUnique({
-        where: { id: reallocationResult.newLineId },
-      });
-      
-      if (!newLine || newLine.lineStatus !== 'active') {
-        console.warn(`⚠️ [WebSocket] Nova linha ${reallocationResult.newLineId} não está ativa`);
-        if (attempt < maxRetries) continue;
-        return { success: false, reason: 'Nova linha não está ativa' };
-      }
-      
-      // 4. Buscar Evolution da nova linha
-      const evolution = await this.prisma.evolution.findUnique({
-        where: { evolutionName: newLine.evolutionName },
-      });
-      
-      if (!evolution) {
-        console.warn(`⚠️ [WebSocket] Evolution não encontrada para linha ${newLine.evolutionName}`);
-        if (attempt < maxRetries) continue;
-        return { success: false, reason: 'Evolution não encontrada' };
-      }
-      
-      // 5. Verificar health da nova linha
       try {
-        const instanceName = `line_${newLine.phone.replace(/\D/g, '')}`;
-        const connectionState = await this.healthCheckCacheService.getConnectionStatus(
-          evolution.evolutionUrl,
-          evolution.evolutionKey,
-          instanceName,
-        );
-        if (connectionState !== 'open' && connectionState !== 'OPEN' && connectionState !== 'connected' && connectionState !== 'CONNECTED') {
-          console.warn(`⚠️ [WebSocket] Nova linha ${newLine.phone} não está conectada (status: ${connectionState})`);
-          if (attempt < maxRetries) continue;
-          return { success: false, reason: 'Nova linha não está conectada' };
+        // 1. Realocar linha
+        console.log(`🔍 [WebSocket] Buscando nova linha para operador ${user.name}...`);
+        const reallocationResult = await this.reallocateLineForOperator(user.id, user.segment);
+        
+        if (!reallocationResult.success) {
+          console.warn(`⚠️ [WebSocket] Falha ao realocar linha na tentativa ${attempt}:`, reallocationResult.reason);
+          if (attempt < maxRetries) {
+            // Aguardar um pouco antes de tentar novamente
+            console.log(`⏳ [WebSocket] Aguardando ${1000 * attempt}ms antes da próxima tentativa...`);
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+            continue;
+          }
+          console.error(`❌ [WebSocket] Não foi possível realocar linha após ${maxRetries} tentativas`);
+          return { success: false, reason: 'Não foi possível realocar linha após múltiplas tentativas' };
         }
-      } catch (healthError) {
-        console.warn(`⚠️ [WebSocket] Erro ao verificar health da nova linha:`, healthError);
-        // Continuar mesmo assim
-      }
+        
+        // 2. Atualizar user object com nova linha
+        user.line = reallocationResult.newLineId;
+        console.log(`✅ [WebSocket] Linha realocada: ${reallocationResult.oldLinePhone || 'sem linha'} → ${reallocationResult.newLinePhone} (ID: ${reallocationResult.newLineId})`);
+        
+        // 3. Buscar dados da nova linha
+        const newLine = await this.prisma.linesStock.findUnique({
+          where: { id: reallocationResult.newLineId },
+        });
+        
+        if (!newLine || newLine.lineStatus !== 'active') {
+          console.warn(`⚠️ [WebSocket] Nova linha ${reallocationResult.newLineId} não está ativa (status: ${newLine?.lineStatus || 'não encontrada'})`);
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+            continue;
+          }
+          return { success: false, reason: 'Nova linha não está ativa' };
+        }
+        
+        // 4. Buscar Evolution da nova linha
+        const evolution = await this.prisma.evolution.findUnique({
+          where: { evolutionName: newLine.evolutionName },
+        });
+        
+        if (!evolution) {
+          console.warn(`⚠️ [WebSocket] Evolution não encontrada para linha ${newLine.evolutionName}`);
+          if (attempt < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+            continue;
+          }
+          return { success: false, reason: 'Evolution não encontrada' };
+        }
+        
+        // 5. Verificar health da nova linha
+        try {
+          const instanceName = `line_${newLine.phone.replace(/\D/g, '')}`;
+          console.log(`🔍 [WebSocket] Verificando conexão da nova linha ${newLine.phone} (${instanceName})...`);
+          const connectionState = await this.healthCheckCacheService.getConnectionStatus(
+            evolution.evolutionUrl,
+            evolution.evolutionKey,
+            instanceName,
+          );
+          console.log(`📊 [WebSocket] Status da conexão: ${connectionState}`);
+          if (connectionState !== 'open' && connectionState !== 'OPEN' && connectionState !== 'connected' && connectionState !== 'CONNECTED') {
+            console.warn(`⚠️ [WebSocket] Nova linha ${newLine.phone} não está conectada (status: ${connectionState})`);
+            if (attempt < maxRetries) {
+              await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+              continue;
+            }
+            return { success: false, reason: 'Nova linha não está conectada' };
+          }
+          console.log(`✅ [WebSocket] Nova linha ${newLine.phone} está conectada!`);
+        } catch (healthError) {
+          console.warn(`⚠️ [WebSocket] Erro ao verificar health da nova linha:`, healthError.message);
+          // Continuar mesmo assim - tentar enviar
+        }
       
-      // 6. Tentar enviar mensagem novamente com a nova linha
-      try {
+        // 6. Tentar enviar mensagem novamente com a nova linha
+        console.log(`📤 [WebSocket] Tentando enviar mensagem com nova linha ${newLine.phone}...`);
         const instanceName = `line_${newLine.phone.replace(/\D/g, '')}`;
         let apiResponse;
         
@@ -1399,19 +1418,26 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         return { success: true, conversation };
         
       } catch (retryError: any) {
-        console.error(`❌ [WebSocket] Erro na tentativa ${attempt} de recuperação:`, retryError.message);
+        console.error(`❌ [WebSocket] Erro na tentativa ${attempt} de recuperação:`, {
+          message: retryError.message,
+          status: retryError.response?.status,
+          data: retryError.response?.data,
+        });
         
         // Se não for a última tentativa, continuar
         if (attempt < maxRetries) {
+          console.log(`⏳ [WebSocket] Aguardando ${1000 * attempt}ms antes da próxima tentativa...`);
           await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
           continue;
         }
         
         // Última tentativa falhou
+        console.error(`❌ [WebSocket] Falha após ${maxRetries} tentativas de recuperação`);
         return { success: false, reason: `Falha após ${maxRetries} tentativas: ${retryError.message}` };
       }
     }
     
+    console.error(`❌ [WebSocket] Todas as ${maxRetries} tentativas de recuperação falharam`);
     return { success: false, reason: 'Todas as tentativas de recuperação falharam' };
   }
 
