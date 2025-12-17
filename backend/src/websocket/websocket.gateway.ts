@@ -16,6 +16,12 @@ import { ControlPanelService } from '../control-panel/control-panel.service';
 import { MediaService } from '../media/media.service';
 import { LinesService } from '../lines/lines.service';
 import { SystemEventsService, EventType, EventModule, EventSeverity } from '../system-events/system-events.service';
+import { HumanizationService } from '../humanization/humanization.service';
+import { RateLimitingService } from '../rate-limiting/rate-limiting.service';
+import { SpintaxService } from '../spintax/spintax.service';
+import { HealthCheckCacheService } from '../health-check-cache/health-check-cache.service';
+import { LineReputationService } from '../line-reputation/line-reputation.service';
+import { PhoneValidationService } from '../phone-validation/phone-validation.service';
 import axios from 'axios';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -51,6 +57,12 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     @Inject(forwardRef(() => LinesService))
     private linesService: LinesService,
     private systemEventsService: SystemEventsService,
+    private humanizationService: HumanizationService,
+    private rateLimitingService: RateLimitingService,
+    private spintaxService: SpintaxService,
+    private healthCheckCacheService: HealthCheckCacheService,
+    private lineReputationService: LineReputationService,
+    private phoneValidationService: PhoneValidationService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -294,6 +306,22 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               }
             } else {
               console.error(`❌ [WebSocket] Nenhuma linha disponível para o operador ${user.name} após todas as tentativas`);
+              // Notificar operador que não há linha disponível
+              client.emit('no-line-available', {
+                message: 'Nenhuma linha disponível no momento. Você será notificado quando uma linha for liberada.',
+              });
+              // Adicionar operador em fila de espera (criar tabela se necessário)
+              try {
+                await (this.prisma as any).operatorWaitingQueue.upsert({
+                  where: { userId: user.id },
+                  update: { createdAt: new Date() },
+                  create: { userId: user.id, createdAt: new Date() },
+                });
+                console.log(`📋 [WebSocket] Operador ${user.name} adicionado à fila de espera por linha`);
+              } catch (error) {
+                // Se a tabela não existir, apenas logar
+                console.warn(`⚠️ [WebSocket] Não foi possível adicionar operador à fila de espera:`, error.message);
+              }
             }
           }
         }
@@ -316,10 +344,12 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               whereClause.segment = user.segment;
             }
 
+            // Remover limite de 10 - processar todas as mensagens pendentes
             const pendingMessages = await (this.prisma as any).messageQueue.findMany({
               where: whereClause,
               orderBy: { createdAt: 'asc' },
-              take: 10,
+              // Processar em lotes de 50 para não sobrecarregar
+              take: 50,
             });
 
             for (const queuedMessage of pendingMessages) {
@@ -384,26 +414,32 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
   async handleDisconnect(client: Socket) {
     if (client.data.user) {
       const userId = client.data.user.id;
-      this.connectedUsers.delete(userId);
       
-      // Atualizar status do usuário para Offline
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: { status: 'Offline' },
-      });
+      try {
+        // Atualizar status do usuário para Offline
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: { status: 'Offline' },
+        });
 
-      // Registrar evento de desconexão
-      if (client.data.user.role === 'operator') {
-        await this.systemEventsService.logEvent(
-          EventType.OPERATOR_DISCONNECTED,
-          EventModule.WEBSOCKET,
-          { userId: userId, userName: client.data.user.name, email: client.data.user.email },
-          userId,
-          EventSeverity.INFO,
-        );
+        // Registrar evento de desconexão
+        if (client.data.user.role === 'operator') {
+          await this.systemEventsService.logEvent(
+            EventType.OPERATOR_DISCONNECTED,
+            EventModule.WEBSOCKET,
+            { userId: userId, userName: client.data.user.name, email: client.data.user.email },
+            userId,
+            EventSeverity.INFO,
+          );
+        }
+        
+        console.log(`❌ Usuário ${client.data.user.name} desconectado do WebSocket`);
+      } catch (error) {
+        console.error(`❌ [WebSocket] Erro ao atualizar status na desconexão:`, error);
+      } finally {
+        // SEMPRE remover do Map, mesmo com erro
+        this.connectedUsers.delete(userId);
       }
-      
-      console.log(`❌ Usuário ${client.data.user.name} desconectado do WebSocket`);
     }
   }
 
@@ -650,6 +686,16 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         return { error: repescagemCheck.reason };
       }
 
+      // Validação de número: Verificar se o número é válido antes de enviar
+      const phoneValidation = this.phoneValidationService.isValidFormat(data.contactPhone);
+      if (!phoneValidation) {
+        console.warn(`⚠️ [WebSocket] Número inválido: ${data.contactPhone}`);
+        client.emit('message-error', { 
+          error: 'Número de telefone inválido. Verifique o formato do número.' 
+        });
+        return { error: 'Número de telefone inválido' };
+      }
+
       // Buscar linha atual do operador (sempre usar a linha atual, não a linha antiga da conversa)
       let line = await this.prisma.linesStock.findUnique({
         where: { id: currentLineId },
@@ -665,17 +711,32 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       });
       const instanceName = `line_${line.phone.replace(/\D/g, '')}`;
 
-      // Health check: Verificar se a linha está realmente conectada no Evolution
-      try {
-        const healthCheck = await axios.get(
-          `${evolution.evolutionUrl}/instance/connectionState/${instanceName}`,
-          {
-            headers: { 'apikey': evolution.evolutionKey },
-            timeout: 5000, // 5 segundos para health check
-          }
-        );
+      // Rate Limiting: Verificar se a linha pode enviar mensagem
+      const canSend = await this.rateLimitingService.canSendMessage(currentLineId);
+      if (!canSend) {
+        const rateLimitInfo = await this.rateLimitingService.getRateLimitInfo(currentLineId);
+        client.emit('message-error', { 
+          error: `Limite de mensagens atingido. Você enviou ${rateLimitInfo.messagesToday}/${rateLimitInfo.limit.daily} mensagens hoje e ${rateLimitInfo.messagesLastHour}/${rateLimitInfo.limit.hourly} na última hora. Tente novamente mais tarde.`,
+        });
+        return { error: 'Limite de mensagens atingido' };
+      }
 
-        const connectionState = healthCheck.data?.state || healthCheck.data?.status;
+      // Humanização: Simular comportamento humano antes de enviar
+      const messageLength = data.message?.length || 0;
+      const isResponse = !data.isNewConversation; // Se não é nova conversa, é resposta
+      const humanizedDelay = await this.humanizationService.getHumanizedDelay(messageLength, isResponse);
+      
+      console.log(`⏱️ [WebSocket] Aplicando delay humanizado de ${Math.round(humanizedDelay)}ms antes de enviar mensagem`);
+      await this.humanizationService.sleep(humanizedDelay);
+
+      // Health check: Verificar se a linha está realmente conectada no Evolution (com cache)
+      let connectionState: string;
+      try {
+        connectionState = await this.healthCheckCacheService.getConnectionStatus(
+          evolution.evolutionUrl,
+          evolution.evolutionKey,
+          instanceName,
+        );
         if (connectionState !== 'open' && connectionState !== 'OPEN' && connectionState !== 'connected' && connectionState !== 'CONNECTED') {
           console.warn(`⚠️ [WebSocket] Linha ${line.phone} não está conectada no Evolution (status: ${connectionState})`);
           
@@ -787,14 +848,28 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
             } else {
               // URL externa - baixar temporariamente
               console.log(`📥 [WebSocket] Baixando arquivo de URL externa: ${data.mediaUrl}`);
-              const response = await axios.get(data.mediaUrl, { 
-                responseType: 'arraybuffer',
-                timeout: 30000, // 30 segundos
-              });
-              const tempPath = path.join('./uploads', `temp-${Date.now()}-${cleanFileName}`);
-              await fs.mkdir('./uploads', { recursive: true });
-              await fs.writeFile(tempPath, response.data);
-              filePath = tempPath;
+              let tempPath: string | null = null;
+              try {
+                const response = await axios.get(data.mediaUrl, { 
+                  responseType: 'arraybuffer',
+                  timeout: 30000, // 30 segundos
+                });
+                tempPath = path.join('./uploads', `temp-${Date.now()}-${cleanFileName}`);
+                await fs.mkdir('./uploads', { recursive: true });
+                await fs.writeFile(tempPath, response.data);
+                filePath = tempPath;
+              } finally {
+                // Limpar arquivo temporário após uso (se ainda existir)
+                if (tempPath) {
+                  try {
+                    await fs.unlink(tempPath).catch(() => {
+                      // Ignorar erro se arquivo já foi deletado
+                    });
+                  } catch (error) {
+                    // Ignorar erro
+                  }
+                }
+              }
             }
           } else {
             // Assumir que é um caminho relativo
@@ -1136,11 +1211,11 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       // 5. Verificar health da nova linha
       try {
         const instanceName = `line_${newLine.phone.replace(/\D/g, '')}`;
-        const healthCheck = await axios.get(
-          `${evolution.evolutionUrl}/instance/connectionState/${instanceName}`,
-          { headers: { 'apikey': evolution.evolutionKey }, timeout: 5000 }
+        const connectionState = await this.healthCheckCacheService.getConnectionStatus(
+          evolution.evolutionUrl,
+          evolution.evolutionKey,
+          instanceName,
         );
-        const connectionState = healthCheck.data?.state || healthCheck.data?.status;
         if (connectionState !== 'open' && connectionState !== 'OPEN' && connectionState !== 'connected' && connectionState !== 'CONNECTED') {
           console.warn(`⚠️ [WebSocket] Nova linha ${newLine.phone} não está conectada (status: ${connectionState})`);
           if (attempt < maxRetries) continue;
@@ -1174,47 +1249,61 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
           // Para documentos, usar sendMedia com base64
           const fileName = data.fileName || data.mediaUrl.split('/').pop() || 'document.pdf';
           let filePath: string;
+          let tempPath: string | null = null;
           
-          if (data.mediaUrl.startsWith('/media/')) {
-            const filename = data.mediaUrl.replace('/media/', '');
-            filePath = await this.mediaService.getFilePath(filename);
-          } else if (data.mediaUrl.startsWith('http')) {
-            const appUrl = process.env.APP_URL || 'https://api.newvend.taticamarketing.com.br';
-            if (data.mediaUrl.startsWith(appUrl)) {
-              const urlPath = new URL(data.mediaUrl).pathname;
-              const filename = urlPath.replace('/media/', '');
+          try {
+            if (data.mediaUrl.startsWith('/media/')) {
+              const filename = data.mediaUrl.replace('/media/', '');
               filePath = await this.mediaService.getFilePath(filename);
+            } else if (data.mediaUrl.startsWith('http')) {
+              const appUrl = process.env.APP_URL || 'https://api.newvend.taticamarketing.com.br';
+              if (data.mediaUrl.startsWith(appUrl)) {
+                const urlPath = new URL(data.mediaUrl).pathname;
+                const filename = urlPath.replace('/media/', '');
+                filePath = await this.mediaService.getFilePath(filename);
+              } else {
+                const response = await axios.get(data.mediaUrl, { 
+                  responseType: 'arraybuffer',
+                  timeout: 30000,
+                });
+                tempPath = path.join('./uploads', `temp-${Date.now()}-${fileName}`);
+                await fs.mkdir('./uploads', { recursive: true });
+                await fs.writeFile(tempPath, response.data);
+                filePath = tempPath;
+              }
             } else {
-              const response = await axios.get(data.mediaUrl, { 
-                responseType: 'arraybuffer',
+              filePath = path.join('./uploads', data.mediaUrl.replace(/^\/media\//, ''));
+            }
+            
+            const fileBuffer = await fs.readFile(filePath);
+            const base64File = fileBuffer.toString('base64');
+            
+            apiResponse = await axios.post(
+              `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
+              {
+                number: data.contactPhone.replace(/\D/g, ''),
+                mediatype: 'document',
+                media: `data:application/pdf;base64,${base64File}`,
+                fileName: fileName,
+                caption: data.message,
+              },
+              {
+                headers: { 'apikey': evolution.evolutionKey },
                 timeout: 30000,
-              });
-              const tempPath = path.join('./uploads', `temp-${Date.now()}-${fileName}`);
-              await fs.mkdir('./uploads', { recursive: true });
-              await fs.writeFile(tempPath, response.data);
-              filePath = tempPath;
+              }
+            );
+          } finally {
+            // SEMPRE limpar arquivo temporário, mesmo com erro
+            if (tempPath) {
+              try {
+                await fs.unlink(tempPath).catch(err =>
+                  console.error(`❌ [WebSocket] Erro ao limpar arquivo temporário ${tempPath}:`, err)
+                );
+              } catch (error) {
+                console.error(`❌ [WebSocket] Erro ao limpar arquivo temporário:`, error);
+              }
             }
-          } else {
-            filePath = path.join('./uploads', data.mediaUrl.replace(/^\/media\//, ''));
           }
-          
-          const fileBuffer = await fs.readFile(filePath);
-          const base64File = fileBuffer.toString('base64');
-          
-          apiResponse = await axios.post(
-            `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
-            {
-              number: data.contactPhone.replace(/\D/g, ''),
-              mediatype: 'document',
-              media: `data:application/pdf;base64,${base64File}`,
-              fileName: fileName,
-              caption: data.message,
-            },
-            {
-              headers: { 'apikey': evolution.evolutionKey },
-              timeout: 30000,
-            }
-          );
         } else {
           apiResponse = await axios.post(
             `${evolution.evolutionUrl}/message/sendText/${instanceName}`,

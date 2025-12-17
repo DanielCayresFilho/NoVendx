@@ -1,28 +1,59 @@
-import { Injectable, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ControlPanelService } from '../control-panel/control-panel.service';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { HumanizationService } from '../humanization/humanization.service';
+import { RateLimitingService } from '../rate-limiting/rate-limiting.service';
+import { SpintaxService } from '../spintax/spintax.service';
+import { LineReputationService } from '../line-reputation/line-reputation.service';
 
 /**
  * Serviço para enviar mensagens automáticas quando cliente não responde
  * DESATIVADO por padrão - não será executado até ser ativado no painel de controle
  */
 @Injectable()
-export class AutoMessageService {
+export class AutoMessageService implements OnModuleInit {
+  private autoMessageInterval: NodeJS.Timeout | null = null;
+
   constructor(
     private prisma: PrismaService,
     private controlPanelService: ControlPanelService,
     @Inject(forwardRef(() => WebsocketGateway))
     private websocketGateway: WebsocketGateway,
+    private humanizationService: HumanizationService,
+    private rateLimitingService: RateLimitingService,
+    private spintaxService: SpintaxService,
+    private lineReputationService: LineReputationService,
   ) {}
+
+  onModuleInit() {
+    // Randomizar intervalo: executa a cada 50-70 minutos (não sempre na hora cheia)
+    this.scheduleNextRun();
+  }
+
+  private scheduleNextRun() {
+    // Limpar intervalo anterior se existir
+    if (this.autoMessageInterval) {
+      clearTimeout(this.autoMessageInterval);
+    }
+
+    // Calcular delay aleatório entre 50-70 minutos
+    const randomMinutes = Math.random() * (70 - 50) + 50;
+    const delayMs = randomMinutes * 60 * 1000;
+
+    console.log(`⏰ [AutoMessage] Próxima execução agendada em ${Math.round(randomMinutes)} minutos`);
+
+    this.autoMessageInterval = setTimeout(() => {
+      this.checkAndSendAutoMessages();
+      this.scheduleNextRun(); // Agendar próxima execução
+    }, delayMs);
+  }
 
   /**
    * Job que verifica conversas sem resposta e envia mensagem automática
-   * Executa a cada hora
+   * Executa em intervalos aleatórios (50-70 minutos) para parecer mais humano
    * DESATIVADO: Só executa se autoMessageEnabled estiver true no painel de controle
    */
-  @Cron(CronExpression.EVERY_HOUR)
   async checkAndSendAutoMessages() {
     try {
       // Buscar configuração global
@@ -135,6 +166,18 @@ export class AutoMessageService {
         if (!line || line.lineStatus !== 'active') {
           continue;
         }
+
+        // Rate Limiting: Verificar se a linha pode enviar mensagem
+        const canSend = await this.rateLimitingService.canSendMessage(line.id);
+        if (!canSend) {
+          console.warn(`⚠️ [AutoMessage] Linha ${line.phone} atingiu limite de mensagens, pulando mensagem automática`);
+          continue;
+        }
+
+        // Humanização: Delay antes de enviar mensagem automática
+        const messageLength = messageText.length;
+        const humanizedDelay = await this.humanizationService.getHumanizedDelay(messageLength, false);
+        await this.humanizationService.sleep(humanizedDelay);
 
         // Enviar mensagem automática via WebSocket (simulando envio do operador)
         try {

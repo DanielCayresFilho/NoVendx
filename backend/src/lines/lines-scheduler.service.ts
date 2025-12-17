@@ -7,24 +7,24 @@ export class LinesSchedulerService {
   constructor(private prisma: PrismaService) {}
 
   /**
-   * Job que verifica operadores offline há > 6 horas e libera suas linhas
+   * Job que verifica operadores offline há > 72 horas e libera suas linhas
    * Executa a cada hora
    */
   @Cron(CronExpression.EVERY_HOUR)
   async releaseLinesFromOfflineOperators() {
-    console.log('🔄 [LinesScheduler] Iniciando verificação de operadores offline há > 6 horas...');
+    console.log('🔄 [LinesScheduler] Iniciando verificação de operadores offline há > 72 horas...');
     
-    const sixHoursAgo = new Date();
-    sixHoursAgo.setHours(sixHoursAgo.getHours() - 6);
+    const seventyTwoHoursAgo = new Date();
+    seventyTwoHoursAgo.setHours(seventyTwoHoursAgo.getHours() - 72);
 
     try {
-      // Buscar operadores offline há mais de 6 horas que têm linhas atribuídas
+      // Buscar operadores offline há mais de 72 horas que têm linhas atribuídas
       const offlineOperators = await this.prisma.user.findMany({
         where: {
           role: 'operator',
           status: 'Offline',
           updatedAt: {
-            lte: sixHoursAgo, // Offline há mais de 6 horas
+            lte: seventyTwoHoursAgo, // Offline há mais de 72 horas
           },
           lineOperators: {
             some: {}, // Tem pelo menos uma linha atribuída
@@ -39,7 +39,7 @@ export class LinesSchedulerService {
         },
       });
 
-      console.log(`📊 [LinesScheduler] Encontrados ${offlineOperators.length} operadores offline há > 6 horas com linhas atribuídas`);
+      console.log(`📊 [LinesScheduler] Encontrados ${offlineOperators.length} operadores offline há > 72 horas com linhas atribuídas`);
 
       let releasedCount = 0;
 
@@ -72,7 +72,7 @@ export class LinesSchedulerService {
             }
 
             releasedCount++;
-            console.log(`✅ [LinesScheduler] Linha ${lineOperator.line.phone} liberada do operador ${operator.name} (offline há > 6h)`);
+            console.log(`✅ [LinesScheduler] Linha ${lineOperator.line.phone} liberada do operador ${operator.name} (offline há > 72h)`);
           } catch (error) {
             console.error(`❌ [LinesScheduler] Erro ao liberar linha ${lineOperator.lineId} do operador ${operator.id}:`, error);
           }

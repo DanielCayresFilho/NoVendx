@@ -637,7 +637,50 @@ export class LinesService {
           // As conversas continuam aparecendo normalmente
         } else {
           console.warn(`⚠️ [handleBannedLine] Nenhuma linha disponível para substituir a linha banida para o operador ${operator?.name || operatorId}`);
-          // Não notificar o operador - ele vai continuar vendo as conversas, mas não vai conseguir enviar até receber uma nova linha
+          
+          // Fechar conversas ativas do operador
+          try {
+            await this.prisma.conversation.updateMany({
+              where: {
+                userId: operatorId,
+                userLine: lineId,
+                tabulation: null, // Apenas conversas não tabuladas
+              },
+              data: {
+                tabulation: -1, // Marcar como fechada (usar -1 como código especial)
+              },
+            });
+            console.log(`🔄 [handleBannedLine] Conversas ativas do operador ${operator?.name || operatorId} foram fechadas`);
+          } catch (error) {
+            console.error(`❌ [handleBannedLine] Erro ao fechar conversas:`, error);
+          }
+          
+          // Notificar operador via WebSocket
+          try {
+            const operatorSockets = Array.from(this.websocketGateway['connectedUsers']?.entries() || [])
+              .filter(([_, socket]: [any, any]) => socket.data?.user?.id === operatorId)
+              .map(([_, socket]: [any, any]) => socket);
+            
+            for (const socket of operatorSockets) {
+              socket.emit('line-lost', {
+                message: 'Sua linha foi removida e não há linha disponível no momento. Você será notificado quando uma nova linha for atribuída.',
+              });
+            }
+          } catch (error) {
+            console.error(`❌ [handleBannedLine] Erro ao notificar operador:`, error);
+          }
+          
+          // Adicionar operador em fila de espera
+          try {
+            await (this.prisma as any).operatorWaitingQueue.upsert({
+              where: { userId: operatorId },
+              update: { createdAt: new Date() },
+              create: { userId: operatorId, createdAt: new Date() },
+            });
+            console.log(`📋 [handleBannedLine] Operador ${operator?.name || operatorId} adicionado à fila de espera`);
+          } catch (error) {
+            console.warn(`⚠️ [handleBannedLine] Não foi possível adicionar operador à fila de espera:`, error.message);
+          }
         }
       }
     } else if (line.linkedTo) {
@@ -810,47 +853,50 @@ export class LinesService {
       return null;
     }
 
-    // Verificar se já existe conversa ativa com algum operador específico
-    const existingConversation = await this.prisma.conversation.findFirst({
-      where: {
-        contactPhone,
-        userLine: lineId,
-        tabulation: null, // Conversa não tabulada (ativa)
-        userId: { in: onlineOperators.map(op => op.id) },
-      },
-      orderBy: {
-        datetime: 'desc',
-      },
-    });
+    // Usar transaction com lock para evitar race condition
+    return await this.prisma.$transaction(async (tx) => {
+      // Verificar se já existe conversa ativa com algum operador específico (com lock)
+      const existingConversation = await tx.conversation.findFirst({
+        where: {
+          contactPhone,
+          userLine: lineId,
+          tabulation: null, // Conversa não tabulada (ativa)
+          userId: { in: onlineOperators.map(op => op.id) },
+        },
+        orderBy: {
+          datetime: 'desc',
+        },
+      });
 
-    // Se já existe conversa ativa, atribuir ao mesmo operador
-    if (existingConversation && existingConversation.userId) {
-      console.log(`✅ [LinesService] Mensagem atribuída ao operador existente: ${existingConversation.userId}`);
-      return existingConversation.userId;
-    }
+      // Se já existe conversa ativa, atribuir ao mesmo operador
+      if (existingConversation && existingConversation.userId) {
+        console.log(`✅ [LinesService] Mensagem atribuída ao operador existente: ${existingConversation.userId}`);
+        return existingConversation.userId;
+      }
 
-    // Distribuir de forma round-robin: contar conversas ativas de cada operador
-    const operatorConversationCounts = await Promise.all(
-      onlineOperators.map(async (operator) => {
-        const count = await this.prisma.conversation.count({
-          where: {
-            userLine: lineId,
-            userId: operator.id,
-            tabulation: null, // Apenas conversas ativas
-          },
-        });
-        return { operatorId: operator.id, count };
-      })
-    );
+      // Distribuir de forma round-robin: contar conversas ativas de cada operador (com lock)
+      const operatorConversationCounts = await Promise.all(
+        onlineOperators.map(async (operator) => {
+          const count = await tx.conversation.count({
+            where: {
+              userLine: lineId,
+              userId: operator.id,
+              tabulation: null, // Apenas conversas ativas
+            },
+          });
+          return { operatorId: operator.id, count };
+        })
+      );
 
-    // Ordenar por menor número de conversas (balanceamento)
-    operatorConversationCounts.sort((a, b) => a.count - b.count);
+      // Ordenar por menor número de conversas (balanceamento)
+      operatorConversationCounts.sort((a, b) => a.count - b.count);
 
-    // Retornar o operador com menos conversas
-    const selectedOperatorId = operatorConversationCounts[0]?.operatorId || onlineOperators[0]?.id;
-    console.log(`✅ [LinesService] Mensagem atribuída ao operador ${selectedOperatorId} (${operatorConversationCounts[0]?.count || 0} conversas ativas)`);
-    
-    return selectedOperatorId || null;
+      // Retornar o operador com menos conversas
+      const selectedOperatorId = operatorConversationCounts[0]?.operatorId || onlineOperators[0]?.id;
+      console.log(`✅ [LinesService] Mensagem atribuída ao operador ${selectedOperatorId} (${operatorConversationCounts[0]?.count || 0} conversas ativas)`);
+      
+      return selectedOperatorId || null;
+    }, { isolationLevel: 'Serializable' });
   }
 
   // Vincular operador à linha (máximo 2 operadores por linha)

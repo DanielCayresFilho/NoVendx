@@ -6,9 +6,26 @@ import { TagsModule } from '../tags/tags.module';
 import { ApiLogsModule } from '../api-logs/api-logs.module';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { ContactsModule } from '../contacts/contacts.module';
+import { HumanizationModule } from '../humanization/humanization.module';
+import { RateLimitingModule } from '../rate-limiting/rate-limiting.module';
+import { SpintaxModule } from '../spintax/spintax.module';
+import { HealthCheckCacheModule } from '../health-check-cache/health-check-cache.module';
+import { LineReputationModule } from '../line-reputation/line-reputation.module';
+import { PhoneValidationModule } from '../phone-validation/phone-validation.module';
 
 @Module({
-  imports: [TagsModule, ApiLogsModule, ConversationsModule, ContactsModule],
+  imports: [
+    TagsModule, 
+    ApiLogsModule, 
+    ConversationsModule, 
+    ContactsModule, 
+    HumanizationModule, 
+    RateLimitingModule,
+    SpintaxModule,
+    HealthCheckCacheModule,
+    LineReputationModule,
+    PhoneValidationModule,
+  ],
   controllers: [ApiMessagesController],
   providers: [ApiMessagesService, PrismaService],
 })

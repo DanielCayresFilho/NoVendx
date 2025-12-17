@@ -8,6 +8,12 @@ import { ControlPanelModule } from '../control-panel/control-panel.module';
 import { MediaModule } from '../media/media.module';
 import { LinesModule } from '../lines/lines.module';
 import { SystemEventsModule } from '../system-events/system-events.module';
+import { HumanizationModule } from '../humanization/humanization.module';
+import { RateLimitingModule } from '../rate-limiting/rate-limiting.module';
+import { SpintaxModule } from '../spintax/spintax.module';
+import { HealthCheckCacheModule } from '../health-check-cache/health-check-cache.module';
+import { LineReputationModule } from '../line-reputation/line-reputation.module';
+import { PhoneValidationModule } from '../phone-validation/phone-validation.module';
 
 @Module({
   imports: [
@@ -22,6 +28,12 @@ import { SystemEventsModule } from '../system-events/system-events.module';
     MediaModule,
     forwardRef(() => LinesModule),
     SystemEventsModule,
+    HumanizationModule,
+    RateLimitingModule,
+    SpintaxModule,
+    HealthCheckCacheModule,
+    LineReputationModule,
+    PhoneValidationModule,
   ],
   providers: [WebsocketGateway, PrismaService],
   exports: [WebsocketGateway],

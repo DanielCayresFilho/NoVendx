@@ -433,14 +433,16 @@ export class ControlPanelService {
       operatorsBySegment.get(segment)!.push(operator);
     }
 
-    // Processar cada segmento
-    for (const [segment, segmentOperators] of operatorsBySegment.entries()) {
-      // Buscar linhas disponíveis para este segmento
-      let availableLines: any[] = [];
-      
-      if (segment !== null && segment !== undefined) {
-        // Buscar linhas do segmento específico
-        availableLines = await this.prisma.linesStock.findMany({
+    // Processar cada segmento dentro de uma transaction para evitar race conditions
+    return await this.prisma.$transaction(async (tx) => {
+      // Processar cada segmento
+      for (const [segment, segmentOperators] of operatorsBySegment.entries()) {
+        // Buscar linhas disponíveis para este segmento
+        let availableLines: any[] = [];
+        
+        if (segment !== null && segment !== undefined) {
+          // Buscar linhas do segmento específico
+          availableLines = await tx.linesStock.findMany({
           where: {
             lineStatus: 'active',
             segment: segment,
@@ -455,7 +457,7 @@ export class ControlPanelService {
       // Se não encontrou linhas do segmento, buscar linhas padrão (segmento null ou "Padrão")
       if (availableLines.length === 0) {
         // Primeiro tentar linhas com segmento null
-        const nullSegmentLines = await this.prisma.linesStock.findMany({
+        const nullSegmentLines = await tx.linesStock.findMany({
           where: {
             lineStatus: 'active',
             segment: null,
@@ -471,12 +473,12 @@ export class ControlPanelService {
           availableLines = nullSegmentLines;
         } else {
           // Se não encontrou linhas com segmento null, buscar segmento "Padrão"
-          const defaultSegment = await this.prisma.segment.findUnique({
+          const defaultSegment = await tx.segment.findUnique({
             where: { name: 'Padrão' },
           });
 
           if (defaultSegment) {
-            availableLines = await this.prisma.linesStock.findMany({
+            availableLines = await tx.linesStock.findMany({
               where: {
                 lineStatus: 'active',
                 segment: defaultSegment.id,
@@ -522,7 +524,7 @@ export class ControlPanelService {
         // Verificar se operador já tem linha
         let currentLineId = operator.line;
         if (!currentLineId) {
-          const lineOperator = await (this.prisma as any).lineOperator.findFirst({
+          const lineOperator = await (tx as any).lineOperator.findFirst({
             where: { userId: operator.id },
           });
           currentLineId = lineOperator?.lineId || null;
@@ -530,7 +532,7 @@ export class ControlPanelService {
 
         // Se operador tem linha, verificar se é de uma evolution ativa
         if (currentLineId) {
-          const currentLine = await this.prisma.linesStock.findUnique({
+          const currentLine = await tx.linesStock.findUnique({
             where: { id: currentLineId },
           });
           
@@ -545,12 +547,12 @@ export class ControlPanelService {
                 console.log(`🔄 [Atribuição em Massa] Desvinculando operador ${operator.name} da linha ${currentLine.phone} (evolution: ${currentLine.evolutionName} não está ativa)`);
                 
                 // Remover vínculo
-                await (this.prisma as any).lineOperator.deleteMany({
+                await (tx as any).lineOperator.deleteMany({
                   where: { userId: operator.id, lineId: currentLineId },
                 });
                 
                 // Limpar campo legacy
-                await this.prisma.user.update({
+                await tx.user.update({
                   where: { id: operator.id },
                   data: { line: null },
                 });
@@ -596,7 +598,7 @@ export class ControlPanelService {
 
         for (const candidateLine of availableLines) {
           // Verificar quantos operadores já estão vinculados
-          const operatorsCount = await (this.prisma as any).lineOperator.count({
+          const operatorsCount = await (tx as any).lineOperator.count({
             where: { lineId: candidateLine.id },
           });
 
@@ -606,7 +608,7 @@ export class ControlPanelService {
           }
 
           // Verificar se operador já está vinculado a esta linha
-          const existing = await (this.prisma as any).lineOperator.findFirst({
+          const existing = await (tx as any).lineOperator.findFirst({
             where: {
               lineId: candidateLine.id,
               userId: operator.id,
@@ -618,7 +620,7 @@ export class ControlPanelService {
           }
 
           // Verificar se a linha já tem operadores de outro segmento
-          const existingOperators = await (this.prisma as any).lineOperator.findMany({
+          const existingOperators = await (tx as any).lineOperator.findMany({
             where: { lineId: candidateLine.id },
             include: { user: true },
           });
@@ -646,8 +648,8 @@ export class ControlPanelService {
         if (assignedLine) {
           console.log(`✅ [Atribuição em Massa] Atribuindo linha ${assignedLine.phone} (ID: ${assignedLine.id}, Segmento: ${assignedLine.segment}) ao operador ${operator.name} (ID: ${operator.id}, Segmento: ${operator.segment})`);
           
-          // Vincular operador à linha
-          await (this.prisma as any).lineOperator.create({
+          // Vincular operador à linha (usando tx dentro da transaction)
+          await (tx as any).lineOperator.create({
             data: {
               lineId: assignedLine.id,
               userId: operator.id,
@@ -655,17 +657,17 @@ export class ControlPanelService {
           });
 
           // Atualizar campos legacy
-          await this.prisma.user.update({
+          await tx.user.update({
             where: { id: operator.id },
             data: { line: assignedLine.id },
           });
 
           // Se for o primeiro operador da linha, atualizar linkedTo
-          const operatorsCount = await (this.prisma as any).lineOperator.count({
+          const operatorsCount = await (tx as any).lineOperator.count({
             where: { lineId: assignedLine.id },
           });
           if (operatorsCount === 1) {
-            await this.prisma.linesStock.update({
+            await tx.linesStock.update({
               where: { id: assignedLine.id },
               data: { linkedTo: operator.id },
             });
@@ -674,7 +676,7 @@ export class ControlPanelService {
           // SEMPRE atualizar segmento da linha para o segmento do operador
           // Se operador tem segmento, atualizar linha para esse segmento
           if (operator.segment !== null && assignedLine.segment !== operator.segment) {
-            await this.prisma.linesStock.update({
+            await tx.linesStock.update({
               where: { id: assignedLine.id },
               data: { segment: operator.segment },
             });
@@ -694,10 +696,10 @@ export class ControlPanelService {
             status: 'assigned',
           });
         } else {
-          // Verificar quantas linhas realmente têm espaço
+          // Verificar quantas linhas realmente têm espaço (usando tx)
           let linesWithSpace = 0;
           for (const line of availableLines) {
-            const count = await (this.prisma as any).lineOperator.count({
+            const count = await (tx as any).lineOperator.count({
               where: { lineId: line.id },
             });
             if (count < 2) {
@@ -725,12 +727,13 @@ export class ControlPanelService {
           });
         }
       }
-    }
+      }
 
-    console.log(`📊 [Atribuição em Massa] Resultado final: ${results.assigned} atribuídas, ${results.skipped} puladas`);
-    console.log(`📊 [Atribuição em Massa] Detalhes: ${results.details.filter(d => d.status === 'assigned').length} atribuídas, ${results.details.filter(d => d.status === 'already_has_line').length} já tinham linha, ${results.details.filter(d => d.status === 'skipped').length} puladas`);
+      console.log(`📊 [Atribuição em Massa] Resultado final: ${results.assigned} atribuídas, ${results.skipped} puladas`);
+      console.log(`📊 [Atribuição em Massa] Detalhes: ${results.details.filter(d => d.status === 'assigned').length} atribuídas, ${results.details.filter(d => d.status === 'already_has_line').length} já tinham linha, ${results.details.filter(d => d.status === 'skipped').length} puladas`);
 
-    return results;
+      return results;
+    }, { timeout: 30000 }); // Timeout de 30 segundos para a transaction
   }
 
   // Desatribuir todas as linhas dos operadores e alterar todas as linhas para segmento "Padrão"

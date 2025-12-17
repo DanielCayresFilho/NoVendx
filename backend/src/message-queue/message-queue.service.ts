@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
@@ -48,10 +49,11 @@ export class MessageQueueService {
       whereClause.segment = operatorSegment;
     }
 
+    // Remover limite de 10 - processar todas as mensagens pendentes (em lotes de 50)
     const pendingMessages = await this.prisma.messageQueue.findMany({
       where: whereClause,
       orderBy: { createdAt: 'asc' },
-      take: 10, // Processar até 10 mensagens por vez
+      take: 50, // Processar até 50 mensagens por vez
     });
 
     for (const queuedMessage of pendingMessages) {
@@ -135,6 +137,57 @@ export class MessageQueueService {
         // Operador tem linha, pode processar mensagens
         await this.processPendingMessages(operator.id, operator.segment || undefined);
       }
+    }
+  }
+
+  /**
+   * Scheduler para reprocessar mensagens pendentes antigas (há mais de 5 minutos)
+   * Executa a cada 5 minutos
+   */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async processOldPendingMessages() {
+    console.log('🔄 [MessageQueue] Verificando mensagens pendentes antigas...');
+    
+    const fiveMinutesAgo = new Date();
+    fiveMinutesAgo.setMinutes(fiveMinutesAgo.getMinutes() - 5);
+
+    try {
+      const oldPendingMessages = await this.prisma.messageQueue.findMany({
+        where: {
+          status: 'pending',
+          createdAt: { lte: fiveMinutesAgo },
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 50, // Processar até 50 por vez
+      });
+
+      if (oldPendingMessages.length === 0) {
+        return;
+      }
+
+      console.log(`📋 [MessageQueue] Encontradas ${oldPendingMessages.length} mensagens pendentes antigas para reprocessar`);
+
+      // Buscar operadores online para processar
+      const onlineOperators = await this.prisma.user.findMany({
+        where: {
+          role: 'operator',
+          status: 'Online',
+        },
+        include: {
+          lineOperators: true,
+        },
+      });
+
+      // Processar mensagens para cada operador online
+      for (const operator of onlineOperators) {
+        if (operator.lineOperators.length > 0) {
+          await this.processPendingMessages(operator.id, operator.segment || undefined);
+        }
+      }
+
+      console.log(`✅ [MessageQueue] Reprocessamento de mensagens antigas concluído`);
+    } catch (error) {
+      console.error('❌ [MessageQueue] Erro ao reprocessar mensagens pendentes antigas:', error);
     }
   }
 }

@@ -5,6 +5,12 @@ import { TagsService } from '../tags/tags.service';
 import { ApiLogsService } from '../api-logs/api-logs.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { ContactsService } from '../contacts/contacts.service';
+import { HumanizationService } from '../humanization/humanization.service';
+import { RateLimitingService } from '../rate-limiting/rate-limiting.service';
+import { SpintaxService } from '../spintax/spintax.service';
+import { HealthCheckCacheService } from '../health-check-cache/health-check-cache.service';
+import { LineReputationService } from '../line-reputation/line-reputation.service';
+import { PhoneValidationService } from '../phone-validation/phone-validation.service';
 import axios from 'axios';
 
 @Injectable()
@@ -15,6 +21,12 @@ export class ApiMessagesService {
     private apiLogsService: ApiLogsService,
     private conversationsService: ConversationsService,
     private contactsService: ContactsService,
+    private humanizationService: HumanizationService,
+    private rateLimitingService: RateLimitingService,
+    private spintaxService: SpintaxService,
+    private healthCheckCacheService: HealthCheckCacheService,
+    private lineReputationService: LineReputationService,
+    private phoneValidationService: PhoneValidationService,
   ) {}
 
   /**
@@ -104,8 +116,15 @@ export class ApiMessagesService {
     message: string,
   ): Promise<boolean> {
     try {
+      // Validação de número antes de enviar
+      const phoneValidation = this.phoneValidationService.isValidFormat(phone);
+      if (!phoneValidation) {
+        console.error(`❌ [ApiMessages] Número inválido ao enviar: ${phone}`);
+        return false;
+      }
+
       const instanceName = `line_${line.phone.replace(/\D/g, '')}`;
-      const cleanPhone = phone.replace(/\D/g, '');
+      const cleanPhone = this.phoneValidationService.cleanPhone(phone);
 
       await axios.post(
         `${evolution.evolutionUrl}/message/sendText/${instanceName}`,
@@ -115,6 +134,7 @@ export class ApiMessagesService {
         },
         {
           headers: { 'apikey': evolution.evolutionKey },
+          timeout: 30000,
         }
       );
 
@@ -159,6 +179,16 @@ export class ApiMessagesService {
     // Processar cada mensagem
     for (const message of dto.messages) {
       try {
+        // Validação de número: Verificar se o número é válido antes de processar
+        const phoneValidation = this.phoneValidationService.isValidFormat(message.phone);
+        if (!phoneValidation) {
+          errors.push({
+            phone: message.phone,
+            reason: 'Número de telefone inválido. Verifique o formato do número.',
+          });
+          continue;
+        }
+
         // Verificar CPC
         const cpcCheck = await this.canSendCpcMessage(message.phone);
         if (!cpcCheck.canSend) {
@@ -181,6 +211,16 @@ export class ApiMessagesService {
           errors.push({
             phone: message.phone,
             reason: 'Linha do operador não disponível',
+          });
+          continue;
+        }
+
+        // Rate Limiting: Verificar se a linha pode enviar mensagem
+        const canSend = await this.rateLimitingService.canSendMessage(line.id);
+        if (!canSend) {
+          errors.push({
+            phone: message.phone,
+            reason: 'Limite de mensagens atingido para esta linha',
           });
           continue;
         }
@@ -223,10 +263,11 @@ export class ApiMessagesService {
 
         let sent = false;
         let finalMessage = message.mainTemplate;
+        let template: any = null;
 
         if (useTemplate && templateId) {
-          // Enviar via template oficial
-          const template = await this.prisma.template.findUnique({
+          // Buscar template
+          template = await this.prisma.template.findUnique({
             where: { id: templateId },
           });
 
@@ -245,7 +286,64 @@ export class ApiMessagesService {
             templateText = templateText.replace(`{{${v.key}}}`, v.value);
           });
           finalMessage = templateText;
+        } else {
+          // Aplicar Spintax na mensagem (se tiver sintaxe Spintax)
+          if (this.spintaxService.hasSpintax(finalMessage)) {
+            finalMessage = this.spintaxService.applySpintax(finalMessage);
+            console.log(`🔄 [ApiMessages] Spintax aplicado para ${message.phone}`);
+          }
+        }
 
+        // Typing Indicator: Enviar sinal de "digitando..." antes de enviar mensagem
+        try {
+          const instanceName = `line_${line.phone.replace(/\D/g, '')}`;
+          const cleanPhone = this.phoneValidationService.cleanPhone(message.phone);
+          
+          await axios.post(
+            `${evolution.evolutionUrl}/chat/sendTyping/${instanceName}`,
+            {
+              number: cleanPhone,
+              value: true, // true = digitando
+            },
+            {
+              headers: { 'apikey': evolution.evolutionKey },
+              timeout: 5000,
+            }
+          );
+          console.log(`⌨️ [ApiMessages] Typing indicator enviado para ${cleanPhone}`);
+        } catch (typingError: any) {
+          // Não bloquear envio se o typing indicator falhar
+          console.warn(`⚠️ [ApiMessages] Erro ao enviar typing indicator:`, typingError.message);
+        }
+
+        // Humanização: Delay antes de enviar mensagem massiva
+        const messageLength = finalMessage?.length || 0;
+        const humanizedDelay = await this.humanizationService.getHumanizedDelay(messageLength, false);
+        await this.humanizationService.sleep(humanizedDelay);
+
+        // Parar typing indicator antes de enviar a mensagem
+        try {
+          const instanceName = `line_${line.phone.replace(/\D/g, '')}`;
+          const cleanPhone = this.phoneValidationService.cleanPhone(message.phone);
+          
+          await axios.post(
+            `${evolution.evolutionUrl}/chat/sendTyping/${instanceName}`,
+            {
+              number: cleanPhone,
+              value: false, // false = parou de digitar
+            },
+            {
+              headers: { 'apikey': evolution.evolutionKey },
+              timeout: 5000,
+            }
+          );
+        } catch (typingError: any) {
+          // Ignorar erro ao parar typing indicator
+          console.warn(`⚠️ [ApiMessages] Erro ao parar typing indicator:`, typingError.message);
+        }
+
+        // Enviar mensagem
+        if (useTemplate && templateId && template) {
           // Se linha oficial, enviar via Cloud API
           if (line.oficial && line.token && line.numberId) {
             sent = await this.sendTemplateViaCloudApi(line, template, message.phone, templateVariables);
@@ -318,6 +416,12 @@ export class ApiMessagesService {
         });
 
         processed++;
+
+        // Delay aleatório entre mensagens massivas (5-15 segundos)
+        if (processed < dto.messages.length) {
+          const delay = await this.humanizationService.getMassiveMessageDelay(5, 15);
+          await this.humanizationService.sleep(delay);
+        }
       } catch (error) {
         errors.push({
           phone: message.phone,
