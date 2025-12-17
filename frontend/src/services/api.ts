@@ -1,5 +1,5 @@
 // API Configuration
-const API_BASE_URL = 'https://api.newvend.taticamarketing.com.br';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 // Token management
 let authToken: string | null = null;

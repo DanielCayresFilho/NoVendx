@@ -1,7 +1,7 @@
 // Socket.IO Service for Real-time Updates
 import { io, Socket } from 'socket.io-client';
 
-const WS_BASE_URL = 'https://api.newvend.taticamarketing.com.br';
+const WS_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 type MessageHandler = (data: any) => void;
 type ConnectionHandler = () => void;

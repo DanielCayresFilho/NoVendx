@@ -281,11 +281,11 @@ export default function Supervisionar() {
                         {msg.messageType === 'image' && msg.mediaUrl ? (
                           <div className="mb-2">
                             <img 
-                              src={msg.mediaUrl.startsWith('http') ? msg.mediaUrl : `https://api.newvend.taticamarketing.com.br${msg.mediaUrl}`}
+                              src={msg.mediaUrl.startsWith('http') ? msg.mediaUrl : `${API_URL}${msg.mediaUrl}`}
                               alt="Imagem"
                               className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
                               style={{ maxHeight: '300px' }}
-                              onClick={() => window.open(msg.mediaUrl!.startsWith('http') ? msg.mediaUrl! : `https://api.newvend.taticamarketing.com.br${msg.mediaUrl}`, '_blank')}
+                              onClick={() => window.open(msg.mediaUrl!.startsWith('http') ? msg.mediaUrl! : `${API_URL}${msg.mediaUrl}`, '_blank')}
                             />
                             {msg.message && !msg.message.includes('recebida') && (
                               <p className="text-sm mt-2">{msg.message}</p>
@@ -296,7 +296,7 @@ export default function Supervisionar() {
                             <audio 
                               controls 
                               className="max-w-full"
-                              src={msg.mediaUrl.startsWith('http') ? msg.mediaUrl : `https://api.newvend.taticamarketing.com.br${msg.mediaUrl}`}
+                              src={msg.mediaUrl.startsWith('http') ? msg.mediaUrl : `${API_URL}${msg.mediaUrl}`}
                             >
                               Seu navegador não suporta áudio.
                             </audio>
@@ -307,7 +307,7 @@ export default function Supervisionar() {
                               controls 
                               className="max-w-full rounded-lg"
                               style={{ maxHeight: '300px' }}
-                              src={msg.mediaUrl.startsWith('http') ? msg.mediaUrl : `https://api.newvend.taticamarketing.com.br${msg.mediaUrl}`}
+                              src={msg.mediaUrl.startsWith('http') ? msg.mediaUrl : `${API_URL}${msg.mediaUrl}`}
                             >
                               Seu navegador não suporta vídeo.
                             </video>
@@ -318,7 +318,7 @@ export default function Supervisionar() {
                         ) : msg.messageType === 'document' && msg.mediaUrl ? (
                           <div className="mb-2">
                             <a 
-                              href={msg.mediaUrl.startsWith('http') ? msg.mediaUrl : `https://api.newvend.taticamarketing.com.br${msg.mediaUrl}`}
+                              href={msg.mediaUrl.startsWith('http') ? msg.mediaUrl : `${API_URL}${msg.mediaUrl}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="flex items-center gap-2 text-sm underline hover:no-underline"
