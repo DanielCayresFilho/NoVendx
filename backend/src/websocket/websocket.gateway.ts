@@ -22,6 +22,11 @@ import { SpintaxService } from '../spintax/spintax.service';
 import { HealthCheckCacheService } from '../health-check-cache/health-check-cache.service';
 import { LineReputationService } from '../line-reputation/line-reputation.service';
 import { PhoneValidationService } from '../phone-validation/phone-validation.service';
+import { LineAssignmentService } from '../line-assignment/line-assignment.service';
+import { MessageValidationService } from '../message-validation/message-validation.service';
+import { MessageSendingService } from '../message-sending/message-sending.service';
+import { AppLoggerService } from '../logger/logger.service';
+import { PrometheusService } from '../prometheus/prometheus.service';
 import axios from 'axios';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -63,6 +68,11 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     private healthCheckCacheService: HealthCheckCacheService,
     private lineReputationService: LineReputationService,
     private phoneValidationService: PhoneValidationService,
+    private lineAssignmentService: LineAssignmentService,
+    private messageValidationService: MessageValidationService,
+    private messageSendingService: MessageSendingService,
+    private logger: AppLoggerService,
+    private prometheusService: PrometheusService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -160,7 +170,11 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
             // Filtrar por evolutions ativas
             const filteredLines = await this.controlPanelService.filterLinesByActiveEvolutions(segmentLines, user.segment);
-            availableLine = await this.findAvailableLineForOperator(filteredLines, user.id, user.segment);
+            // Usar LineAssignmentService (centralizado)
+            const assignmentResult = await this.lineAssignmentService.findAvailableLineForOperator(user.id, user.segment);
+            if (assignmentResult.success && assignmentResult.lineId) {
+              availableLine = await this.prisma.linesStock.findUnique({ where: { id: assignmentResult.lineId } });
+            }
           }
 
           // 2. Se não encontrou linha do segmento, buscar linha padrão (segmento "Padrão")
@@ -448,6 +462,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { contactPhone: string; message: string; messageType?: string; mediaUrl?: string; fileName?: string; isNewConversation?: boolean },
   ) {
+    const startTime = Date.now(); // Para métricas de latência
     console.log(`📤 [WebSocket] Recebido send-message:`, JSON.stringify(data, null, 2));
     
     const user = client.data.user;
@@ -742,19 +757,19 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
           
           // Realocação automática: buscar nova linha para o operador
           console.log(`🔄 [WebSocket] Iniciando realocação automática de linha para operador ${user.name}...`);
-          const reallocationResult = await this.reallocateLineForOperator(user.id, user.segment);
+          const reallocationResult = await this.lineAssignmentService.reallocateLineForOperator(user.id, user.segment);
           
-          if (reallocationResult.success) {
+          if (reallocationResult.success && reallocationResult.lineId) {
             // Atualizar user object
-            user.line = reallocationResult.newLineId;
-            currentLineId = reallocationResult.newLineId;
+            user.line = reallocationResult.lineId;
+            currentLineId = reallocationResult.lineId;
             
-            console.log(`✅ [WebSocket] Linha realocada automaticamente: ${reallocationResult.oldLinePhone} → ${reallocationResult.newLinePhone}`);
+            console.log(`✅ [WebSocket] Linha realocada automaticamente: ${line.phone} → ${reallocationResult.linePhone}`);
             
             // Tentar enviar mensagem novamente com a nova linha
             // Recarregar dados da nova linha
             const newLine = await this.prisma.linesStock.findUnique({
-              where: { id: reallocationResult.newLineId },
+              where: { id: reallocationResult.lineId },
             });
             
             if (newLine) {
@@ -764,7 +779,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               console.log(`🔄 [WebSocket] Continuando envio de mensagem com nova linha ${newLine.phone}`);
             } else {
               client.emit('message-error', { 
-                error: `Linha ${reallocationResult.oldLinePhone} desconectada. Nova linha atribuída, mas não foi possível enviar a mensagem. Tente novamente.` 
+                error: `Linha ${line.phone} desconectada. Nova linha atribuída, mas não foi possível enviar a mensagem. Tente novamente.` 
               });
               return { error: 'Linha desconectada e realocada, mas nova linha não encontrada' };
             }
@@ -1102,6 +1117,21 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         EventSeverity.INFO,
       );
 
+      // Métricas Prometheus
+      if (this.prometheusService) {
+        const latency = (Date.now() - startTime) / 1000; // em segundos
+        this.prometheusService.incrementMessagesSent(
+          currentLineId,
+          data.messageType || 'text',
+          'success',
+        );
+        this.prometheusService.recordMessageLatency(
+          currentLineId,
+          data.messageType || 'text',
+          latency,
+        );
+      }
+      
       // Emitir mensagem para o usuário (usar mesmo formato que new_message)
       client.emit('message-sent', { message: conversation });
       console.log(`📤 [WebSocket] Emitido message-sent para o cliente`);
@@ -1119,6 +1149,21 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         code: error.code,
         stack: error.stack,
       });
+      
+      // Métricas Prometheus - erro
+      if (this.prometheusService) {
+        const latency = (Date.now() - startTime) / 1000;
+        this.prometheusService.incrementMessagesSent(
+          currentLineId,
+          data.messageType || 'text',
+          'error',
+        );
+        this.prometheusService.incrementErrors(
+          error.response?.status ? 'api_error' : 'network_error',
+          'websocket',
+          'high',
+        );
+      }
       
       // Registrar evento de erro
       await this.systemEventsService.logEvent(

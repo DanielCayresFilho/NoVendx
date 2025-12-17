@@ -1,8 +1,11 @@
 import { Controller, Post, Body, UseGuards, Req } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { ApiMessagesService } from './api-messages.service';
 import { MassiveCpcDto, SendTemplateExternalDto } from './dto/massive-cpc.dto';
 import { ApiKeyGuard } from '../common/guards/api-key.guard';
 
+@ApiTags('api-messages')
+@ApiBearerAuth('JWT-auth')
 @Controller('api/messages')
 export class ApiMessagesController {
   constructor(private readonly apiMessagesService: ApiMessagesService) {}

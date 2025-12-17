@@ -4,6 +4,9 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { BlocklistService } from '../blocklist/blocklist.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { RateLimitingService } from '../rate-limiting/rate-limiting.service';
+import { LineReputationService } from '../line-reputation/line-reputation.service';
+import { AppLoggerService } from '../logger/logger.service';
 import axios from 'axios';
 
 interface TemplateVariable {
@@ -18,6 +21,9 @@ export class CampaignsProcessor {
     private prisma: PrismaService,
     private blocklistService: BlocklistService,
     private conversationsService: ConversationsService,
+    private rateLimitingService: RateLimitingService,
+    private lineReputationService: LineReputationService,
+    private logger: AppLoggerService,
   ) {}
 
   @Process('send-campaign-message')
@@ -53,6 +59,29 @@ export class CampaignsProcessor {
 
       if (!line || line.lineStatus !== 'active') {
         throw new Error('Linha não disponível');
+      }
+
+      // Rate Limiting: Verificar se a linha pode enviar mensagem (CAMPANHAS TAMBÉM RESPEITAM LIMITES)
+      const canSend = await this.rateLimitingService.canSendMessage(lineId);
+      if (!canSend) {
+        const rateLimitInfo = await this.rateLimitingService.getRateLimitInfo(lineId);
+        this.logger.warn(
+          `Campanha: Limite de mensagens atingido para linha ${line.phone}`,
+          'CampaignsProcessor',
+          { campaignId, lineId, rateLimitInfo },
+        );
+        throw new Error(`Limite de mensagens atingido (${rateLimitInfo.messagesToday}/${rateLimitInfo.limit.daily} hoje)`);
+      }
+
+      // Verificar reputação da linha
+      const isLineHealthy = await this.lineReputationService.isLineHealthy(lineId);
+      if (!isLineHealthy) {
+        this.logger.warn(
+          `Campanha: Linha ${line.phone} com baixa reputação`,
+          'CampaignsProcessor',
+          { campaignId, lineId },
+        );
+        throw new Error('Linha com baixa reputação, envio bloqueado');
       }
 
       // Buscar evolução

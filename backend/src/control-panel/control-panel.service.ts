@@ -1,46 +1,59 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { UpdateControlPanelDto } from './dto/control-panel.dto';
+import { CacheService } from '../cache/cache.service';
 
 @Injectable()
 export class ControlPanelService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private cacheService: CacheService,
+  ) {}
 
-  // Buscar configurações (global ou por segmento)
+  // Buscar configurações (global ou por segmento) - COM CACHE
   async findOne(segmentId?: number) {
-    const config = await this.prisma.controlPanel.findFirst({
-      where: { segmentId: segmentId ?? null },
-    });
+    const cacheKey = `control-panel:${segmentId ?? 'global'}`;
+    
+    // Cache: 5 minutos (configurações mudam raramente)
+    return await this.cacheService.getOrSet(
+      cacheKey,
+      async () => {
+        const config = await this.prisma.controlPanel.findFirst({
+          where: { segmentId: segmentId ?? null },
+        });
 
-    if (!config) {
-      // Retornar configuração padrão se não existir
-      return {
-        id: null,
-        segmentId: segmentId ?? null,
-        blockPhrasesEnabled: true,
-        blockPhrases: [],
-        blockTabulationId: null,
-        cpcCooldownEnabled: true,
-        cpcCooldownHours: 24,
-        resendCooldownEnabled: true,
-        resendCooldownHours: 24,
-        repescagemEnabled: false,
-        repescagemMaxMessages: 2,
-        repescagemCooldownHours: 24,
-        repescagemMaxAttempts: 2,
-        activeEvolutions: null, // null = todas as evolutions ativas
-        autoMessageEnabled: false, // Desativado por padrão
-        autoMessageHours: 24,
-        autoMessageText: null,
-        autoMessageMaxAttempts: 1,
-      };
-    }
+        if (!config) {
+          // Retornar configuração padrão se não existir
+          return {
+            id: null,
+            segmentId: segmentId ?? null,
+            blockPhrasesEnabled: true,
+            blockPhrases: [],
+            blockTabulationId: null,
+            cpcCooldownEnabled: true,
+            cpcCooldownHours: 24,
+            resendCooldownEnabled: true,
+            resendCooldownHours: 24,
+            repescagemEnabled: false,
+            repescagemMaxMessages: 2,
+            repescagemCooldownHours: 24,
+            repescagemMaxAttempts: 2,
+            activeEvolutions: null, // null = todas as evolutions ativas
+            autoMessageEnabled: false, // Desativado por padrão
+            autoMessageHours: 24,
+            autoMessageText: null,
+            autoMessageMaxAttempts: 1,
+          };
+        }
 
-    return {
-      ...config,
-      blockPhrases: config.blockPhrases ? JSON.parse(config.blockPhrases) : [],
-      activeEvolutions: (config as any).activeEvolutions ? JSON.parse((config as any).activeEvolutions) : null,
-    };
+        return {
+          ...config,
+          blockPhrases: config.blockPhrases ? JSON.parse(config.blockPhrases) : [],
+          activeEvolutions: (config as any).activeEvolutions ? JSON.parse((config as any).activeEvolutions) : null,
+        };
+      },
+      5 * 60 * 1000, // 5 minutos
+    );
   }
 
   // Criar ou atualizar configurações
@@ -85,6 +98,11 @@ export class ControlPanelService {
         where: { id: existing.id },
         data,
       });
+      
+      // Invalidar cache após atualização
+      const cacheKey = `control-panel:${dto.segmentId ?? 'global'}`;
+      await this.cacheService.del(cacheKey);
+      
       return {
         ...updated,
         blockPhrases: updated.blockPhrases ? JSON.parse(updated.blockPhrases) : [],
@@ -99,6 +117,11 @@ export class ControlPanelService {
         activeEvolutions: data.activeEvolutions ?? null,
       } as any, // Temporário até migration ser aplicada
     });
+    
+    // Invalidar cache após criação
+    const cacheKey = `control-panel:${dto.segmentId ?? 'global'}`;
+    await this.cacheService.del(cacheKey);
+    
     return {
       ...created,
       blockPhrases: created.blockPhrases ? JSON.parse(created.blockPhrases) : [],

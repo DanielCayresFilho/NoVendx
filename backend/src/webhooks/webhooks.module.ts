@@ -10,6 +10,7 @@ import { ControlPanelModule } from '../control-panel/control-panel.module';
 import { BlocklistModule } from '../blocklist/blocklist.module';
 import { TabulationsModule } from '../tabulations/tabulations.module';
 import { SystemEventsModule } from '../system-events/system-events.module';
+import { PrometheusModule } from '../prometheus/prometheus.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { SystemEventsModule } from '../system-events/system-events.module';
     BlocklistModule,
     TabulationsModule,
     SystemEventsModule,
+    PrometheusModule,
   ],
   controllers: [WebhooksController],
   providers: [WebhooksService, PrismaService],

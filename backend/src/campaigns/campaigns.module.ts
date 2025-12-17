@@ -8,6 +8,9 @@ import { ContactsModule } from '../contacts/contacts.module';
 import { UsersModule } from '../users/users.module';
 import { BlocklistModule } from '../blocklist/blocklist.module';
 import { ConversationsModule } from '../conversations/conversations.module';
+import { RateLimitingModule } from '../rate-limiting/rate-limiting.module';
+import { LineReputationModule } from '../line-reputation/line-reputation.module';
+import { LoggerModule } from '../logger/logger.module';
 
 @Module({
   imports: [
@@ -18,6 +21,9 @@ import { ConversationsModule } from '../conversations/conversations.module';
     UsersModule,
     BlocklistModule,
     ConversationsModule,
+    RateLimitingModule,
+    LineReputationModule,
+    LoggerModule,
   ],
   controllers: [CampaignsController],
   providers: [CampaignsService, CampaignsProcessor, PrismaService],

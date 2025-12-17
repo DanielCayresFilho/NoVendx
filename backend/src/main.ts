@@ -1,45 +1,81 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
+import { ValidationPipe } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import * as compression from 'compression';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  const configService = app.get(ConfigService);
-
-  // Permitir frontends configuráveis via env (lista separada por vírgula)
-  const originEnv = configService.get<string>('CORS_ORIGINS');
-  const allowedOrigins = originEnv
-    ? originEnv.split(',').map((o) => o.trim()).filter(Boolean)
-    : ['http://localhost:5173', 'http://localhost:3001'];
-
+  // CORS
   app.enableCors({
-    origin: allowedOrigins,
+    origin: process.env.CORS_ORIGINS
+      ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim())
+      : ['http://localhost:5173', 'http://localhost:3001'],
     credentials: true,
   });
 
+  // Compression
+  app.use(compression());
+
+  // Global validation pipe
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
-      forbidNonWhitelisted: false, // Permitir campos extras (mais flexível)
+      forbidNonWhitelisted: true,
       transform: true,
-      transformOptions: {
-        enableImplicitConversion: true, // Conversão automática de tipos
-      },
     }),
   );
 
-  // Middleware para garantir UTF-8 em todas as respostas JSON
+  // Swagger/OpenAPI Documentation
+  const config = new DocumentBuilder()
+    .setTitle('NewVend API')
+    .setDescription('API para gerenciamento de atendimento WhatsApp')
+    .setVersion('1.0')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        name: 'JWT',
+        description: 'Enter JWT token',
+        in: 'header',
+      },
+      'JWT-auth',
+    )
+    .addTag('auth', 'Autenticação')
+    .addTag('users', 'Usuários')
+    .addTag('conversations', 'Conversas')
+    .addTag('lines', 'Linhas')
+    .addTag('campaigns', 'Campanhas')
+    .addTag('reports', 'Relatórios')
+    .addTag('control-panel', 'Painel de Controle')
+    .addTag('api-messages', 'API de Mensagens')
+    .addServer(process.env.API_URL || 'http://localhost:3000', 'Servidor Principal')
+    .build();
+
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api/docs', app, document, {
+    swaggerOptions: {
+      persistAuthorization: true,
+      tagsSorter: 'alpha',
+      operationsSorter: 'alpha',
+    },
+  });
+
+  // Global interceptor para charset UTF-8
   app.use((req, res, next) => {
-    if (req.path.startsWith('/reports')) {
+    if (req.url.startsWith('/api/') && res.getHeader('Content-Type')?.toString().includes('json')) {
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
     }
     next();
   });
 
-  const port = configService.get('PORT') || 3000;
+  const port = process.env.PORT || 3000;
   await app.listen(port);
   console.log(`🚀 Application is running on: http://localhost:${port}`);
+  console.log(`📚 Swagger documentation: http://localhost:${port}/api/docs`);
+  console.log(`📊 Prometheus metrics: http://localhost:${port}/metrics`);
 }
+
 bootstrap();

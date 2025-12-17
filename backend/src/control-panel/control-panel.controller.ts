@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Body, Param, Delete, Query, UseGuards, ParseIntPipe } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { ControlPanelService } from './control-panel.service';
 import { UpdateControlPanelDto, AddBlockPhraseDto, RemoveBlockPhraseDto } from './dto/control-panel.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -6,6 +7,8 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 
+@ApiTags('control-panel')
+@ApiBearerAuth('JWT-auth')
 @Controller('control-panel')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ControlPanelController {

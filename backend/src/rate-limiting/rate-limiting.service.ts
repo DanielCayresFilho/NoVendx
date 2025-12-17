@@ -10,9 +10,9 @@ interface RateLimit {
 @Injectable()
 export class RateLimitingService {
   private readonly baseLimits: Record<string, RateLimit> = {
-    newLine: { daily: 20, hourly: 5 },      // Linhas novas (< 7 dias)
-    warmingUp: { daily: 50, hourly: 10 },  // Linhas aquecendo (7-30 dias)
-    mature: { daily: 150, hourly: 30 },    // Linhas maduras (> 30 dias)
+    newLine: { daily: 200, hourly: 50 },      // Linhas novas (< 7 dias) - 50 msg/hora, 200/dia
+    warmingUp: { daily: 500, hourly: 100 },   // Linhas aquecendo (7-30 dias) - 100 msg/hora, 500/dia
+    mature: { daily: 1000, hourly: 200 },    // Linhas maduras (> 30 dias) - 200 msg/hora, 1000/dia
   };
 
   constructor(
@@ -101,9 +101,12 @@ export class RateLimitingService {
       try {
         const reputationLimit = await this.lineReputationService.getReputationBasedLimit(lineId);
         // Usar o menor entre o limite base e o limite baseado em reputação
+        // Mas garantir mínimo de 50 mensagens/hora
+        const adjustedDaily = Math.min(baseLimit.daily, reputationLimit);
+        const adjustedHourly = Math.max(50, Math.min(baseLimit.hourly, Math.floor(reputationLimit / 6))); // Mínimo 50/hora
         return {
-          daily: Math.min(baseLimit.daily, reputationLimit),
-          hourly: Math.min(baseLimit.hourly, Math.floor(reputationLimit / 6)), // Aproximadamente 1/6 do limite diário
+          daily: adjustedDaily,
+          hourly: adjustedHourly,
         };
       } catch (error) {
         console.warn(`⚠️ [RateLimit] Erro ao calcular limite baseado em reputação:`, error.message);

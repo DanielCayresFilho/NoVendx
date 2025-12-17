@@ -24,12 +24,28 @@ import { ControlPanelModule } from './control-panel/control-panel.module';
 import { HealthController } from './health/health.controller';
 import { MessageQueueModule } from './message-queue/message-queue.module';
 import { SystemEventsModule } from './system-events/system-events.module';
+import { LoggerModule } from './logger/logger.module';
+import { CircuitBreakerModule } from './circuit-breaker/circuit-breaker.module';
+import { LineAssignmentModule } from './line-assignment/line-assignment.module';
+import { MessageValidationModule } from './message-validation/message-validation.module';
+import { MessageSendingModule } from './message-sending/message-sending.module';
+import { CacheModule } from './cache/cache.module';
+import { ArchivingModule } from './archiving/archiving.module';
+import { PrometheusModule } from './prometheus/prometheus.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    LoggerModule,
+    CircuitBreakerModule,
+    LineAssignmentModule,
+    MessageValidationModule,
+    MessageSendingModule,
+    CacheModule,
+    ArchivingModule,
+    PrometheusModule,
     BullModule.forRoot({
       redis: {
         host: process.env.REDIS_HOST || 'localhost',

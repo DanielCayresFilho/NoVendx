@@ -14,6 +14,11 @@ import { SpintaxModule } from '../spintax/spintax.module';
 import { HealthCheckCacheModule } from '../health-check-cache/health-check-cache.module';
 import { LineReputationModule } from '../line-reputation/line-reputation.module';
 import { PhoneValidationModule } from '../phone-validation/phone-validation.module';
+import { LineAssignmentModule } from '../line-assignment/line-assignment.module';
+import { MessageValidationModule } from '../message-validation/message-validation.module';
+import { MessageSendingModule } from '../message-sending/message-sending.module';
+import { LoggerModule } from '../logger/logger.module';
+import { PrometheusModule } from '../prometheus/prometheus.module';
 
 @Module({
   imports: [
@@ -34,6 +39,11 @@ import { PhoneValidationModule } from '../phone-validation/phone-validation.modu
     HealthCheckCacheModule,
     LineReputationModule,
     PhoneValidationModule,
+    LineAssignmentModule,
+    MessageValidationModule,
+    MessageSendingModule,
+    LoggerModule,
+    PrometheusModule,
   ],
   providers: [WebsocketGateway, PrismaService],
   exports: [WebsocketGateway],

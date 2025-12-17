@@ -9,6 +9,15 @@ export class PhoneValidationService {
    * @returns true se o formato é válido
    */
   isValidFormat(phone: string): boolean {
+    return this.validatePhoneNumber(phone);
+  }
+
+  /**
+   * Valida formato básico de número de telefone (alias para isValidFormat)
+   * @param phone Número de telefone
+   * @returns true se o formato é válido
+   */
+  validatePhoneNumber(phone: string): boolean {
     if (!phone) return false;
 
     // Remover caracteres não numéricos

@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { LinesService } from './lines.service';
 import { CreateLineDto } from './dto/create-line.dto';
 import { UpdateLineDto } from './dto/update-line.dto';

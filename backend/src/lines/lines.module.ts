@@ -6,6 +6,7 @@ import { LinesController } from './lines.controller';
 import { PrismaService } from '../prisma.service';
 import { WebsocketModule } from '../websocket/websocket.module';
 import { ControlPanelModule } from '../control-panel/control-panel.module';
+import { PrometheusModule } from '../prometheus/prometheus.module';
 import { SystemEventsModule } from '../system-events/system-events.module';
 
 @Module({
@@ -14,6 +15,7 @@ import { SystemEventsModule } from '../system-events/system-events.module';
     forwardRef(() => WebsocketModule),
     ControlPanelModule,
     SystemEventsModule,
+    PrometheusModule,
   ],
   controllers: [LinesController],
   providers: [LinesService, LinesSchedulerService, PrismaService],

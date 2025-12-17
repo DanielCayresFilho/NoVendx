@@ -136,6 +136,15 @@ export class LineReputationService {
   }
 
   /**
+   * Obtém a reputação de uma linha (com cache)
+   * @param lineId ID da linha
+   * @returns Reputação da linha
+   */
+  async getLineReputation(lineId: number): Promise<LineReputation> {
+    return await this.calculateReputation(lineId);
+  }
+
+  /**
    * Verifica se uma linha está saudável o suficiente para enviar mensagens
    * @param lineId ID da linha
    * @returns true se a linha está saudável

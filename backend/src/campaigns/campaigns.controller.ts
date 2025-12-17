@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Body, Param, Delete, UseGuards, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CampaignsService } from './campaigns.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
@@ -9,6 +10,8 @@ import { Role } from '@prisma/client';
 import csv from 'csv-parser';
 import { Readable } from 'stream';
 
+@ApiTags('campaigns')
+@ApiBearerAuth('JWT-auth')
 @Controller('campaigns')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class CampaignsController {

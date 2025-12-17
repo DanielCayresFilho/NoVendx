@@ -192,21 +192,23 @@ model Evolution {
 }
 
 model Conversation {
-  id           Int      @id @default(autoincrement())
+  id           Int       @id @default(autoincrement())
   contactName  String
   contactPhone String
   segment      Int?
   userName     String?
   userLine     Int? // ID da linha (mantido para compatibilidade)
   userId       Int? // ID do operador específico que está atendendo
-  message      String   @db.Text
+  message      String    @db.Text
   sender       Sender
-  datetime     DateTime @default(now())
+  datetime     DateTime  @default(now())
   tabulation   Int?
-  messageType  String   @default("text")
+  messageType  String    @default("text")
   mediaUrl     String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  archived     Boolean   @default(false) // Se true, conversa foi arquivada
+  archivedAt   DateTime? // Data de arquivamento
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([contactPhone])
   @@index([segment])
@@ -214,6 +216,8 @@ model Conversation {
   @@index([userId])
   @@index([tabulation])
   @@index([datetime])
+  @@index([archived, datetime])
+  @@index([archivedAt])
 }
 
 model Tag {

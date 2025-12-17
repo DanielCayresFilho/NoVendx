@@ -971,6 +971,9 @@ export class ReportsService {
     const users = await this.prisma.user.findMany({
       where: {
         role: 'operator',
+        email: {
+          endsWith: '@paschoalotto.com.br',
+        },
       },
     });
     const userMap = new Map(users.map(u => [u.name, u]));
@@ -1042,6 +1045,9 @@ export class ReportsService {
     const users = await this.prisma.user.findMany({
       where: {
         line: { not: null },
+        email: {
+          endsWith: '@paschoalotto.com.br',
+        },
       },
     });
     const userMap = new Map(
@@ -1198,6 +1204,11 @@ export class ReportsService {
     const lineOperators = await (this.prisma as any).lineOperator.findMany({
       where: {
         lineId: { in: lineIds },
+        user: {
+          email: {
+            endsWith: '@paschoalotto.com.br',
+          },
+        },
       },
       include: {
         user: {
@@ -1398,6 +1409,9 @@ export class ReportsService {
     const users = await this.prisma.user.findMany({
       where: {
         line: { not: null },
+        email: {
+          endsWith: '@paschoalotto.com.br',
+        },
       },
     });
     const userMap = new Map(

@@ -5,6 +5,7 @@ import { UpdateLineDto } from './dto/update-line.dto';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { ControlPanelService } from '../control-panel/control-panel.service';
 import { SystemEventsService, EventType, EventModule, EventSeverity } from '../system-events/system-events.service';
+import { PrometheusService } from '../prometheus/prometheus.service';
 import axios from 'axios';
 
 @Injectable()
@@ -15,6 +16,7 @@ export class LinesService {
     private websocketGateway: WebsocketGateway,
     private controlPanelService: ControlPanelService,
     private systemEventsService: SystemEventsService,
+    private prometheusService?: PrometheusService,
   ) {}
 
   async create(createLineDto: CreateLineDto, createdBy?: number) {
@@ -914,6 +916,12 @@ export class LinesService {
       }
 
       if (line.lineStatus !== 'active') {
+        if (this.prometheusService) {
+          this.prometheusService.incrementLineAssignments(
+            line.segment || null,
+            'error',
+          );
+        }
         throw new BadRequestException('Linha não está ativa');
       }
 
@@ -978,6 +986,14 @@ export class LinesService {
           where: { id: lineId },
           data: { linkedTo: userId },
         });
+      }
+
+      // Métricas Prometheus
+      if (this.prometheusService) {
+        this.prometheusService.incrementLineAssignments(
+          line.segment || null,
+          'success',
+        );
       }
 
       console.log(`✅ Operador ${userId} vinculado à linha ${lineId} (com lock)`);

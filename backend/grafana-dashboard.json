@@ -1,0 +1,121 @@
+{
+  "dashboard": {
+    "title": "NewVend - Métricas do Sistema",
+    "tags": ["newvend", "whatsapp", "monitoring"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 0,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Mensagens Enviadas (Total)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(messages_sent_total)",
+            "legendFormat": "Total"
+          }
+        ],
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 }
+      },
+      {
+        "id": 2,
+        "title": "Mensagens Recebidas (Total)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(messages_received_total)",
+            "legendFormat": "Total"
+          }
+        ],
+        "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 }
+      },
+      {
+        "id": 3,
+        "title": "Erros (Total)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(errors_total)",
+            "legendFormat": "Total"
+          }
+        ],
+        "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 }
+      },
+      {
+        "id": 4,
+        "title": "Operadores Ativos",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "active_operators",
+            "legendFormat": "Ativos"
+          }
+        ],
+        "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 }
+      },
+      {
+        "id": 5,
+        "title": "Mensagens Enviadas por Minuto",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(messages_sent_total[1m])",
+            "legendFormat": "{{status}}"
+          }
+        ],
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 }
+      },
+      {
+        "id": 6,
+        "title": "Latência de Mensagens (P95)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, message_latency_seconds_bucket)",
+            "legendFormat": "P95"
+          }
+        ],
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 }
+      },
+      {
+        "id": 7,
+        "title": "Erros por Tipo",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum by (type) (errors_total)",
+            "legendFormat": "{{type}}"
+          }
+        ],
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 }
+      },
+      {
+        "id": 8,
+        "title": "Linhas Ativas",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(active_lines)",
+            "legendFormat": "Total"
+          }
+        ],
+        "gridPos": { "h": 4, "w": 6, "x": 12, "y": 12 }
+      },
+      {
+        "id": 9,
+        "title": "Tamanho da Fila de Mensagens",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "message_queue_size",
+            "legendFormat": "{{status}}"
+          }
+        ],
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 }
+      }
+    ]
+  }
+}
+
