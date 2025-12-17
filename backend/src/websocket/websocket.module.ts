@@ -17,7 +17,7 @@ import { SystemEventsModule } from '../system-events/system-events.module';
         secret: configService.get('JWT_SECRET'),
       }),
     }),
-    ConversationsModule,
+    forwardRef(() => ConversationsModule),
     ControlPanelModule,
     MediaModule,
     forwardRef(() => LinesModule),
