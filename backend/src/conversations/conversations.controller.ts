@@ -57,12 +57,9 @@ export class ConversationsController {
     if (user.role === Role.supervisor) {
       return this.conversationsService.findAll({ segment: user.segment, tabulation: null });
     }
-    // Operador: se não tiver linha atribuída, não retorna nada
-    if (!user.line) {
-      return [];
-    }
-    // Filtrar por linha e pelo operador específico (userId)
-    return this.conversationsService.findActiveConversations(user.line, user.id);
+    // Operador: buscar conversas apenas por userId (não por userLine)
+    // Isso permite que as conversas continuem aparecendo mesmo se a linha foi banida
+    return this.conversationsService.findActiveConversations(undefined, user.id);
   }
 
   @Get('tabulated')
@@ -78,12 +75,9 @@ export class ConversationsController {
     if (user.role === Role.supervisor) {
       return this.conversationsService.findAll({ segment: user.segment, tabulation: { not: null } });
     }
-    // Operador: se não tiver linha atribuída, não retorna nada
-    if (!user.line) {
-      return [];
-    }
-    // Filtrar por linha e pelo operador específico (userId)
-    return this.conversationsService.findTabulatedConversations(user.line, user.id);
+    // Operador: buscar conversas tabuladas apenas por userId (não por userLine)
+    // Isso permite que as conversas tabuladas continuem aparecendo mesmo se a linha foi banida
+    return this.conversationsService.findTabulatedConversations(undefined, user.id);
   }
 
   @Get('segment/:segment')

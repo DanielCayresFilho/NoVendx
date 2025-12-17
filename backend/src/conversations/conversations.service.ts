@@ -64,13 +64,13 @@ export class ConversationsService {
       tabulation: null,
     };
 
-    if (userLine) {
-      where.userLine = userLine;
-    }
-
-    // Se for operador, garantir que só veja suas próprias conversas (userId específico)
+    // IMPORTANTE: Para operadores, buscar apenas por userId (não por userLine)
+    // Isso permite que as conversas continuem aparecendo mesmo se a linha foi banida
     if (userId) {
       where.userId = userId;
+    } else if (userLine) {
+      // Fallback: se não tiver userId, usar userLine (para compatibilidade)
+      where.userLine = userLine;
     }
 
     // Retornar TODAS as mensagens não tabuladas (o frontend vai agrupar)
@@ -89,13 +89,13 @@ export class ConversationsService {
       tabulation: { not: null },
     };
 
-    if (userLine) {
-      where.userLine = userLine;
-    }
-
-    // Se for operador, garantir que só veja suas próprias conversas (userId específico)
+    // IMPORTANTE: Para operadores, buscar apenas por userId (não por userLine)
+    // Isso permite que as conversas tabuladas continuem aparecendo mesmo se a linha foi banida
     if (userId) {
       where.userId = userId;
+    } else if (userLine) {
+      // Fallback: se não tiver userId, usar userLine (para compatibilidade)
+      where.userLine = userLine;
     }
 
     // Retornar TODAS as mensagens tabuladas (o frontend vai agrupar)

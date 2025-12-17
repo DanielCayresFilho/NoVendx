@@ -592,33 +592,25 @@ export class LinesService {
           await this.assignOperatorToLine(availableLine.id, operatorId);
           console.log(`✅ [handleBannedLine] Linha ${availableLine.phone} atribuída ao operador ${operator.name} (ID: ${operatorId})`);
           
-          // Notificar operador sobre nova linha atribuída
-          if (this.websocketGateway) {
-            const contactsToRecall = contactsByOperator.get(operatorId) || [];
-            this.websocketGateway.emitToUser(operatorId, 'line-banned', {
-              bannedLineId: lineId,
-              bannedLinePhone: line.phone,
-              newLineId: availableLine.id,
-              newLinePhone: availableLine.phone,
-              contactsToRecall: contactsToRecall,
-              message: `Sua linha foi banida. Uma nova linha foi atribuída. Você tem ${contactsToRecall.length} contato(s) para rechamar.`,
-            });
-          }
+          // IMPORTANTE: Atualizar userLine das conversas ativas para a nova linha
+          // Isso mantém as conversas vinculadas ao operador, mas usando a nova linha
+          await this.prisma.conversation.updateMany({
+            where: {
+              userId: operatorId,
+              userLine: lineId, // Linha banida
+              tabulation: null, // Apenas conversas ativas
+            },
+            data: {
+              userLine: availableLine.id, // Nova linha
+            },
+          });
+          console.log(`🔄 [handleBannedLine] Conversas do operador ${operator.name} atualizadas para usar a nova linha ${availableLine.phone}`);
+          
+          // NÃO notificar o operador - ele não precisa saber que a linha foi banida
+          // As conversas continuam aparecendo normalmente
         } else {
           console.warn(`⚠️ [handleBannedLine] Nenhuma linha disponível para substituir a linha banida para o operador ${operator?.name || operatorId}`);
-          
-          // Notificar operador mesmo sem nova linha (para que ele saiba que precisa rechamar)
-          if (this.websocketGateway) {
-            const contactsToRecall = contactsByOperator.get(operatorId) || [];
-            this.websocketGateway.emitToUser(operatorId, 'line-banned', {
-              bannedLineId: lineId,
-              bannedLinePhone: line.phone,
-              newLineId: null,
-              newLinePhone: null,
-              contactsToRecall: contactsToRecall,
-              message: `Sua linha foi banida. Você tem ${contactsToRecall.length} contato(s) para rechamar quando receber uma nova linha.`,
-            });
-          }
+          // Não notificar o operador - ele vai continuar vendo as conversas, mas não vai conseguir enviar até receber uma nova linha
         }
       }
     } else if (line.linkedTo) {

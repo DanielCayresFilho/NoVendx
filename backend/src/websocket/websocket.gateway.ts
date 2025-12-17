@@ -252,7 +252,9 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
       // Enviar conversas ativas ao conectar (apenas para operators)
       if (user.role === 'operator' && user.line) {
-        const activeConversations = await this.conversationsService.findActiveConversations(user.line, user.id);
+        // Buscar conversas apenas por userId (não por userLine)
+        // Isso permite que as conversas continuem aparecendo mesmo se a linha foi banida
+        const activeConversations = await this.conversationsService.findActiveConversations(undefined, user.id);
         client.emit('active-conversations', activeConversations);
       }
     } catch (error) {
@@ -286,10 +288,26 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     const user = client.data.user;
     console.log(`👤 [WebSocket] Usuário: ${user?.name}, role: ${user?.role}, line: ${user?.line}`);
 
-    if (!user || !user.line) {
-      console.error('❌ [WebSocket] Usuário não autenticado ou sem linha');
-      client.emit('message-error', { error: 'Usuário não autenticado ou sem linha atribuída' });
-      return { error: 'Usuário não autenticado ou sem linha atribuída' };
+    if (!user) {
+      console.error('❌ [WebSocket] Usuário não autenticado');
+      client.emit('message-error', { error: 'Usuário não autenticado' });
+      return { error: 'Usuário não autenticado' };
+    }
+
+    // Buscar linha atual do operador (pode estar na tabela LineOperator ou no campo legacy)
+    let currentLineId = user.line;
+    if (!currentLineId) {
+      const lineOperator = await (this.prisma as any).lineOperator.findFirst({
+        where: { userId: user.id },
+        select: { lineId: true },
+      });
+      currentLineId = lineOperator?.lineId || null;
+    }
+
+    if (!currentLineId) {
+      console.error('❌ [WebSocket] Operador sem linha atribuída');
+      client.emit('message-error', { error: 'Você não possui uma linha atribuída. Aguarde a atribuição de uma nova linha.' });
+      return { error: 'Você não possui uma linha atribuída' };
     }
 
     // Verificar se é uma nova conversa (1x1) e se o operador tem permissão
@@ -338,9 +356,9 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         return { error: repescagemCheck.reason };
       }
 
-      // Buscar linha do usuário
+      // Buscar linha atual do operador (sempre usar a linha atual, não a linha antiga da conversa)
       const line = await this.prisma.linesStock.findUnique({
-        where: { id: user.line },
+        where: { id: currentLineId },
       });
 
       if (!line || line.lineStatus !== 'active') {
@@ -620,13 +638,14 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         where: { phone: data.contactPhone },
       });
 
-      // Salvar conversa
+      // Salvar conversa usando a linha ATUAL do operador
+      // Isso garante que mesmo se a linha foi trocada, a mensagem vai pela linha atual
       const conversation = await this.conversationsService.create({
         contactName: contact?.name || 'Desconhecido',
         contactPhone: data.contactPhone,
         segment: user.segment,
         userName: user.name,
-        userLine: user.line,
+        userLine: currentLineId, // Sempre usar a linha atual
         userId: user.id, // Operador específico que está enviando
         message: data.message,
         sender: 'operator',
