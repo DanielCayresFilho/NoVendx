@@ -42,20 +42,35 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   
   if (isAuthenticated) {
+    // Operadores devem ir direto para /atendimento
+    if (user?.role === 'operador') {
+      return <Navigate to="/atendimento" replace />;
+    }
     return <Navigate to="/" replace />;
   }
   
   return <>{children}</>;
 }
 
+function DashboardRoute() {
+  const { user } = useAuth();
+  
+  // Operadores não podem acessar o dashboard, redirecionar para /atendimento
+  if (user?.role === 'operador') {
+    return <Navigate to="/atendimento" replace />;
+  }
+  
+  return <Dashboard />;
+}
+
 function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-      <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      <Route path="/" element={<ProtectedRoute><DashboardRoute /></ProtectedRoute>} />
       <Route path="/atendimento" element={<ProtectedRoute><Atendimento /></ProtectedRoute>} />
       <Route path="/supervisionar" element={<ProtectedRoute><Supervisionar /></ProtectedRoute>} />
       <Route path="/usuarios" element={<ProtectedRoute><Usuarios /></ProtectedRoute>} />
