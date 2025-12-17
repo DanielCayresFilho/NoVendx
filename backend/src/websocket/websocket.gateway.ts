@@ -8,7 +8,7 @@ import {
   ConnectedSocket,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { UseGuards } from '@nestjs/common';
+import { UseGuards, Inject, forwardRef } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma.service';
 import { ConversationsService } from '../conversations/conversations.service';
@@ -47,6 +47,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     private conversationsService: ConversationsService,
     private controlPanelService: ControlPanelService,
     private mediaService: MediaService,
+    @Inject(forwardRef(() => LinesService))
     private linesService: LinesService,
   ) {}
 
