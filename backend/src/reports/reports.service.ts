@@ -1247,7 +1247,7 @@ export class ReportsService {
       return {
         id: line.id,
         Número: line.phone,
-        Status: line.lineStatus === 'ban' ? 'Banida' : line.lineStatus === 'active' ? 'Ativa' : line.lineStatus || 'Desconhecido',
+        Blindado: line.lineStatus === 'ban' ? 'Sim' : line.lineStatus === 'active' ? 'Não' : 'Desconhecido',
         Segmento: this.normalizeText(segment?.name) || 'Sem segmento',
         'Operador(es) Vinculado(s)': this.normalizeText(operadoresList) || 'Sem operador',
         'Data e Hora da Primeira Atribuição': firstAssignment ? this.formatDateTime(firstAssignment.createdAt) : 'N/A',
