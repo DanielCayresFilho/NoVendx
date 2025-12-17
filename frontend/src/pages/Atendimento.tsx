@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Plus, Send, FileText, MessageCircle, ArrowRight, ArrowLeft, Loader2, Wifi, WifiOff, Edit, UserCheck, X, Check, Phone, AlertTriangle } from "lucide-react";
+import { Plus, Send, FileText, MessageCircle, ArrowRight, ArrowLeft, Loader2, Wifi, WifiOff, Edit, UserCheck, X, Check, Phone, AlertTriangle, RefreshCw, Search } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
@@ -76,6 +76,9 @@ export default function Atendimento() {
   // Estado para filtro de conversas
   type FilterType = 'todas' | 'stand-by' | 'atendimento' | 'finalizadas';
   const [conversationFilter, setConversationFilter] = useState<FilterType>('todas');
+  
+  // Estado para pesquisa de tabulação
+  const [tabulationSearch, setTabulationSearch] = useState("");
   
   // Estado para notificação de linha banida
   const [lineBannedNotification, setLineBannedNotification] = useState<{
@@ -484,6 +487,32 @@ export default function Atendimento() {
     loadTabulations();
   }, [loadConversations, loadTabulations]);
 
+  // Detectar desconexão do WebSocket e sugerir atualização
+  useEffect(() => {
+    if (!isRealtimeConnected) {
+      // Mostrar toast informando sobre desconexão após 5 segundos
+      const timeout = setTimeout(() => {
+        toast({
+          title: "Conexão perdida",
+          description: "A conexão com o servidor foi perdida. Atualize a página para reconectar.",
+          variant: "destructive",
+          duration: 10000,
+          action: (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.location.reload()}
+            >
+              Atualizar
+            </Button>
+          ),
+        });
+      }, 5000);
+
+      return () => clearTimeout(timeout);
+    }
+  }, [isRealtimeConnected]);
+
   // Poll for new messages only if WebSocket not connected
   useEffect(() => {
     if (isRealtimeConnected) {
@@ -806,11 +835,20 @@ export default function Atendimento() {
                     <TooltipContent>
                       {isRealtimeConnected 
                         ? 'Conectado em tempo real' 
-                        : 'Reconectando...'}
+                        : 'WebSocket desconectado - Atualize a página'}
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => window.location.reload()}
+                className="h-8 w-8 p-0"
+                title="Atualizar página"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
               <Dialog open={isNewConversationOpen} onOpenChange={setIsNewConversationOpen}>
                 <DialogTrigger asChild>
                   <Button size="icon" className="h-8 w-8">
@@ -1009,15 +1047,37 @@ export default function Atendimento() {
                       Tabular
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {tabulations.map((tab) => (
-                      <DropdownMenuItem key={tab.id} onClick={() => handleTabulate(tab.id)}>
-                        {tab.name}
-                      </DropdownMenuItem>
-                    ))}
-                    {tabulations.length === 0 && (
-                      <DropdownMenuItem disabled>Nenhuma tabulação disponível</DropdownMenuItem>
-                    )}
+                  <DropdownMenuContent align="end" className="w-64">
+                    <div className="p-2 border-b" onClick={(e) => e.stopPropagation()}>
+                      <div className="relative">
+                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Pesquisar tabulação..."
+                          value={tabulationSearch}
+                          onChange={(e) => setTabulationSearch(e.target.value)}
+                          className="pl-8 h-8"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto">
+                      {tabulations
+                        .filter((tab) => 
+                          tab.name.toLowerCase().includes(tabulationSearch.toLowerCase())
+                        )
+                        .map((tab) => (
+                          <DropdownMenuItem key={tab.id} onClick={() => handleTabulate(tab.id)}>
+                            {tab.name}
+                          </DropdownMenuItem>
+                        ))}
+                      {tabulations.filter((tab) => 
+                        tab.name.toLowerCase().includes(tabulationSearch.toLowerCase())
+                      ).length === 0 && (
+                        <DropdownMenuItem disabled>
+                          {tabulationSearch ? 'Nenhuma tabulação encontrada' : 'Nenhuma tabulação disponível'}
+                        </DropdownMenuItem>
+                      )}
+                    </div>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
