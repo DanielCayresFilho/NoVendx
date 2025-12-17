@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma.service';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { ControlPanelModule } from '../control-panel/control-panel.module';
 import { MediaModule } from '../media/media.module';
+import { LinesModule } from '../lines/lines.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { MediaModule } from '../media/media.module';
     ConversationsModule,
     ControlPanelModule,
     MediaModule,
+    forwardRef(() => LinesModule),
   ],
   providers: [WebsocketGateway, PrismaService],
   exports: [WebsocketGateway],

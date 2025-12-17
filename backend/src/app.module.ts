@@ -22,6 +22,7 @@ import { ApiMessagesModule } from './api-messages/api-messages.module';
 import { TemplatesModule } from './templates/templates.module';
 import { ControlPanelModule } from './control-panel/control-panel.module';
 import { HealthController } from './health/health.controller';
+import { MessageQueueModule } from './message-queue/message-queue.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { HealthController } from './health/health.controller';
     ApiMessagesModule,
     TemplatesModule,
     ControlPanelModule,
+    MessageQueueModule,
   ],
   controllers: [HealthController],
   providers: [PrismaService],

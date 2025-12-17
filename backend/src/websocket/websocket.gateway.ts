@@ -14,6 +14,7 @@ import { PrismaService } from '../prisma.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { ControlPanelService } from '../control-panel/control-panel.service';
 import { MediaService } from '../media/media.service';
+import { LinesService } from '../lines/lines.service';
 import axios from 'axios';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -46,6 +47,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     private conversationsService: ConversationsService,
     private controlPanelService: ControlPanelService,
     private mediaService: MediaService,
+    private linesService: LinesService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -105,13 +107,12 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               });
 
               if (currentOperatorsCount < 2) {
-                await (this.prisma as any).lineOperator.create({
-                  data: {
-                    lineId: user.line,
-                    userId: user.id,
-                  },
-                });
-                console.log(`✅ [WebSocket] Linha ${user.line} sincronizada para operador ${user.name}`);
+                try {
+                  await this.linesService.assignOperatorToLine(user.line, user.id); // ✅ COM LOCK
+                  console.log(`✅ [WebSocket] Linha ${user.line} sincronizada para operador ${user.name}`);
+                } catch (error) {
+                  console.warn(`⚠️ [WebSocket] Erro ao sincronizar linha ${user.line} para ${user.name}:`, error.message);
+                }
               } else {
                 console.warn(`⚠️ [WebSocket] Linha ${user.line} já tem 2 operadores, não foi possível sincronizar para ${user.name}`);
               }
@@ -207,39 +208,26 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
               // Só vincular se passou na validação de segmento
               if (availableLine) {
-                // Vincular operador à linha usando a nova tabela
-                await (this.prisma as any).lineOperator.create({
-                  data: {
+                // Vincular operador à linha usando método com transaction + lock
+                try {
+                  await this.linesService.assignOperatorToLine(availableLine.id, user.id);
+                  
+                  // Atualizar user object
+                  user.line = availableLine.id;
+
+                  console.log(`✅ [WebSocket] Linha ${availableLine.phone} vinculada automaticamente ao operador ${user.name} (segmento ${availableLine.segment || 'sem segmento'})`);
+                  
+                  // Notificar o operador
+                  client.emit('line-assigned', {
                     lineId: availableLine.id,
-                    userId: user.id,
-                  },
-                });
-
-                // Atualizar campos legacy para compatibilidade
-                await this.prisma.user.update({
-                  where: { id: user.id },
-                  data: { line: availableLine.id },
-                });
-
-                if (currentOperatorsCount === 0) {
-                  // Primeiro operador - atualizar linkedTo
-                  await this.prisma.linesStock.update({
-                    where: { id: availableLine.id },
-                    data: { linkedTo: user.id },
+                    linePhone: availableLine.phone,
+                    message: `Você foi vinculado à linha ${availableLine.phone} automaticamente.`,
                   });
+                } catch (error) {
+                  console.error(`❌ [WebSocket] Erro ao vincular linha ${availableLine.id} ao operador ${user.id}:`, error.message);
+                  // Continuar para tentar outra linha
+                  availableLine = null;
                 }
-
-                // Atualizar user object
-                user.line = availableLine.id;
-
-                console.log(`✅ [WebSocket] Linha ${availableLine.phone} vinculada automaticamente ao operador ${user.name} (segmento ${availableLine.segment || 'sem segmento'})`);
-                
-                // Notificar o operador
-                client.emit('line-assigned', {
-                  lineId: availableLine.id,
-                  linePhone: availableLine.phone,
-                  message: `Você foi vinculado à linha ${availableLine.phone} automaticamente.`,
-                });
               }
             }
           }
@@ -275,42 +263,30 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                   existingOperators.every((lo: any) => lo.user.segment === user.segment);
                 
                 if (canAssign) {
-                  // Vincular operador à linha
-                  await (this.prisma as any).lineOperator.create({
-                    data: {
+                  // Vincular operador à linha usando método com transaction + lock
+                  try {
+                    await this.linesService.assignOperatorToLine(fallbackLine.id, user.id);
+                    
+                    // Atualizar segmento da linha se operador tem segmento
+                    if (user.segment && fallbackLine.segment !== user.segment) {
+                      await this.prisma.linesStock.update({
+                        where: { id: fallbackLine.id },
+                        data: { segment: user.segment },
+                      });
+                    }
+                    
+                    user.line = fallbackLine.id;
+                    console.log(`✅ [WebSocket] Linha ${fallbackLine.phone} atribuída ao operador ${user.name} (busca ampla)`);
+                    
+                    client.emit('line-assigned', {
                       lineId: fallbackLine.id,
-                      userId: user.id,
-                    },
-                  });
-                  
-                  await this.prisma.user.update({
-                    where: { id: user.id },
-                    data: { line: fallbackLine.id },
-                  });
-                  
-                  if (currentOperatorsCount === 0) {
-                    await this.prisma.linesStock.update({
-                      where: { id: fallbackLine.id },
-                      data: { linkedTo: user.id },
+                      linePhone: fallbackLine.phone,
+                      message: `Você foi vinculado à linha ${fallbackLine.phone} automaticamente.`,
                     });
+                  } catch (error) {
+                    console.error(`❌ [WebSocket] Erro ao vincular linha ${fallbackLine.id} ao operador ${user.id}:`, error.message);
+                    // Continuar para tentar outra linha
                   }
-                  
-                  // Atualizar segmento da linha se operador tem segmento
-                  if (user.segment && fallbackLine.segment !== user.segment) {
-                    await this.prisma.linesStock.update({
-                      where: { id: fallbackLine.id },
-                      data: { segment: user.segment },
-                    });
-                  }
-                  
-                  user.line = fallbackLine.id;
-                  console.log(`✅ [WebSocket] Linha ${fallbackLine.phone} atribuída ao operador ${user.name} (busca ampla)`);
-                  
-                  client.emit('line-assigned', {
-                    lineId: fallbackLine.id,
-                    linePhone: fallbackLine.phone,
-                    message: `Você foi vinculado à linha ${fallbackLine.phone} automaticamente.`,
-                  });
                 }
               }
             } else {
@@ -327,6 +303,74 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         // Isso permite que as conversas continuem aparecendo mesmo se a linha foi banida
         const activeConversations = await this.conversationsService.findActiveConversations(undefined, user.id);
         client.emit('active-conversations', activeConversations);
+
+        // Processar mensagens pendentes na fila quando operador fica online
+        if (user.line) {
+          try {
+            // Buscar mensagens pendentes do segmento do operador
+            const whereClause: any = { status: 'pending' };
+            if (user.segment) {
+              whereClause.segment = user.segment;
+            }
+
+            const pendingMessages = await (this.prisma as any).messageQueue.findMany({
+              where: whereClause,
+              orderBy: { createdAt: 'asc' },
+              take: 10,
+            });
+
+            for (const queuedMessage of pendingMessages) {
+              try {
+                await (this.prisma as any).messageQueue.update({
+                  where: { id: queuedMessage.id },
+                  data: { status: 'processing', attempts: { increment: 1 } },
+                });
+
+                // Criar conversa
+                await this.conversationsService.create({
+                  contactPhone: queuedMessage.contactPhone,
+                  contactName: queuedMessage.contactName || queuedMessage.contactPhone,
+                  message: queuedMessage.message,
+                  sender: 'contact',
+                  messageType: queuedMessage.messageType,
+                  mediaUrl: queuedMessage.mediaUrl,
+                  segment: queuedMessage.segment,
+                  userId: user.id,
+                  userLine: user.line,
+                });
+
+                await (this.prisma as any).messageQueue.update({
+                  where: { id: queuedMessage.id },
+                  data: { status: 'sent', processedAt: new Date() },
+                });
+
+                this.emitToUser(user.id, 'queued-message-processed', {
+                  messageId: queuedMessage.id,
+                  contactPhone: queuedMessage.contactPhone,
+                });
+              } catch (error) {
+                console.error(`❌ [WebSocket] Erro ao processar mensagem ${queuedMessage.id}:`, error);
+                if (queuedMessage.attempts >= 3) {
+                  await (this.prisma as any).messageQueue.update({
+                    where: { id: queuedMessage.id },
+                    data: { status: 'failed', errorMessage: error.message },
+                  });
+                } else {
+                  await (this.prisma as any).messageQueue.update({
+                    where: { id: queuedMessage.id },
+                    data: { status: 'pending' },
+                  });
+                }
+              }
+            }
+
+            if (pendingMessages.length > 0) {
+              console.log(`✅ [WebSocket] ${pendingMessages.length} mensagem(ns) da fila processada(s) para operador ${user.name}`);
+            }
+          } catch (error) {
+            console.error('❌ [WebSocket] Erro ao processar fila de mensagens:', error);
+          }
+        }
       }
     } catch (error) {
       console.error('Erro na autenticação WebSocket:', error);
@@ -452,40 +496,27 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
           // Só vincular se passou na validação de segmento
           if (availableLine) {
-            // Vincular operador à linha usando a nova tabela
-            await (this.prisma as any).lineOperator.create({
-              data: {
+            // Vincular operador à linha usando método com transaction + lock
+            try {
+              await this.linesService.assignOperatorToLine(availableLine.id, user.id);
+              
+              // Atualizar user object e currentLineId
+              user.line = availableLine.id;
+              currentLineId = availableLine.id;
+
+              console.log(`✅ [WebSocket] Linha ${availableLine.phone} atribuída automaticamente ao operador ${user.name} (segmento ${availableLine.segment || 'sem segmento'})`);
+              
+              // Notificar o operador
+              client.emit('line-assigned', {
                 lineId: availableLine.id,
-                userId: user.id,
-              },
-            });
-
-            // Atualizar campos legacy para compatibilidade
-            await this.prisma.user.update({
-              where: { id: user.id },
-              data: { line: availableLine.id },
-            });
-
-            if (currentOperatorsCount === 0) {
-              // Primeiro operador - atualizar linkedTo
-              await this.prisma.linesStock.update({
-                where: { id: availableLine.id },
-                data: { linkedTo: user.id },
+                linePhone: availableLine.phone,
+                message: `Você foi vinculado à linha ${availableLine.phone} automaticamente.`,
               });
+            } catch (error) {
+              console.error(`❌ [WebSocket] Erro ao vincular linha ${availableLine.id} ao operador ${user.id}:`, error.message);
+              // Continuar para tentar outra linha
+              availableLine = null;
             }
-
-            // Atualizar user object e currentLineId
-            user.line = availableLine.id;
-            currentLineId = availableLine.id;
-
-            console.log(`✅ [WebSocket] Linha ${availableLine.phone} atribuída automaticamente ao operador ${user.name} (segmento ${availableLine.segment || 'sem segmento'})`);
-            
-            // Notificar o operador
-            client.emit('line-assigned', {
-              lineId: availableLine.id,
-              linePhone: availableLine.phone,
-              message: `Você foi vinculado à linha ${availableLine.phone} automaticamente.`,
-            });
           }
         }
       }
@@ -521,43 +552,31 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               existingOperators.every((lo: any) => lo.user.segment === user.segment);
             
             if (canAssign) {
-              // Vincular operador à linha
-              await (this.prisma as any).lineOperator.create({
-                data: {
+              // Vincular operador à linha usando método com transaction + lock
+              try {
+                await this.linesService.assignOperatorToLine(fallbackLine.id, user.id);
+                
+                // Atualizar segmento da linha se operador tem segmento
+                if (user.segment && fallbackLine.segment !== user.segment) {
+                  await this.prisma.linesStock.update({
+                    where: { id: fallbackLine.id },
+                    data: { segment: user.segment },
+                  });
+                }
+                
+                user.line = fallbackLine.id;
+                currentLineId = fallbackLine.id;
+                console.log(`✅ [WebSocket] Linha ${fallbackLine.phone} atribuída ao operador ${user.name} (busca ampla no envio de mensagem)`);
+                
+                client.emit('line-assigned', {
                   lineId: fallbackLine.id,
-                  userId: user.id,
-                },
-              });
-              
-              await this.prisma.user.update({
-                where: { id: user.id },
-                data: { line: fallbackLine.id },
-              });
-              
-              if (currentOperatorsCount === 0) {
-                await this.prisma.linesStock.update({
-                  where: { id: fallbackLine.id },
-                  data: { linkedTo: user.id },
+                  linePhone: fallbackLine.phone,
+                  message: `Você foi vinculado à linha ${fallbackLine.phone} automaticamente.`,
                 });
+              } catch (error) {
+                console.error(`❌ [WebSocket] Erro ao vincular linha ${fallbackLine.id} ao operador ${user.id}:`, error.message);
+                // Continuar para tentar outra linha
               }
-              
-              // Atualizar segmento da linha se operador tem segmento
-              if (user.segment && fallbackLine.segment !== user.segment) {
-                await this.prisma.linesStock.update({
-                  where: { id: fallbackLine.id },
-                  data: { segment: user.segment },
-                });
-              }
-              
-              user.line = fallbackLine.id;
-              currentLineId = fallbackLine.id;
-              console.log(`✅ [WebSocket] Linha ${fallbackLine.phone} atribuída ao operador ${user.name} (busca ampla no envio de mensagem)`);
-              
-              client.emit('line-assigned', {
-                lineId: fallbackLine.id,
-                linePhone: fallbackLine.phone,
-                message: `Você foi vinculado à linha ${fallbackLine.phone} automaticamente.`,
-              });
             }
           }
         }
@@ -618,7 +637,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       }
 
       // Buscar linha atual do operador (sempre usar a linha atual, não a linha antiga da conversa)
-      const line = await this.prisma.linesStock.findUnique({
+      let line = await this.prisma.linesStock.findUnique({
         where: { id: currentLineId },
       });
 
@@ -631,6 +650,61 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         where: { evolutionName: line.evolutionName },
       });
       const instanceName = `line_${line.phone.replace(/\D/g, '')}`;
+
+      // Health check: Verificar se a linha está realmente conectada no Evolution
+      try {
+        const healthCheck = await axios.get(
+          `${evolution.evolutionUrl}/instance/connectionState/${instanceName}`,
+          {
+            headers: { 'apikey': evolution.evolutionKey },
+            timeout: 5000, // 5 segundos para health check
+          }
+        );
+
+        const connectionState = healthCheck.data?.state || healthCheck.data?.status;
+        if (connectionState !== 'open' && connectionState !== 'OPEN' && connectionState !== 'connected' && connectionState !== 'CONNECTED') {
+          console.warn(`⚠️ [WebSocket] Linha ${line.phone} não está conectada no Evolution (status: ${connectionState})`);
+          
+          // Realocação automática: buscar nova linha para o operador
+          console.log(`🔄 [WebSocket] Iniciando realocação automática de linha para operador ${user.name}...`);
+          const reallocationResult = await this.reallocateLineForOperator(user.id, user.segment);
+          
+          if (reallocationResult.success) {
+            // Atualizar user object
+            user.line = reallocationResult.newLineId;
+            currentLineId = reallocationResult.newLineId;
+            
+            console.log(`✅ [WebSocket] Linha realocada automaticamente: ${reallocationResult.oldLinePhone} → ${reallocationResult.newLinePhone}`);
+            
+            // Tentar enviar mensagem novamente com a nova linha
+            // Recarregar dados da nova linha
+            const newLine = await this.prisma.linesStock.findUnique({
+              where: { id: reallocationResult.newLineId },
+            });
+            
+            if (newLine) {
+              // Atualizar variável line para usar a nova linha
+              line = newLine;
+              // Continuar o fluxo normalmente com a nova linha
+              console.log(`🔄 [WebSocket] Continuando envio de mensagem com nova linha ${newLine.phone}`);
+            } else {
+              client.emit('message-error', { 
+                error: `Linha ${reallocationResult.oldLinePhone} desconectada. Nova linha atribuída, mas não foi possível enviar a mensagem. Tente novamente.` 
+              });
+              return { error: 'Linha desconectada e realocada, mas nova linha não encontrada' };
+            }
+          } else {
+            client.emit('message-error', { 
+              error: `Linha ${line.phone} não está conectada e não foi possível realocar outra linha. ${reallocationResult.reason || ''}` 
+            });
+            return { error: 'Linha não está conectada e não foi possível realocar' };
+          }
+        }
+      } catch (healthError: any) {
+        console.error(`❌ [WebSocket] Erro ao verificar health da linha ${line.phone}:`, healthError.message);
+        // Continuar mesmo se o health check falhar (pode ser problema temporário)
+        console.warn(`⚠️ [WebSocket] Continuando envio apesar do erro no health check`);
+      }
 
       // Enviar mensagem via Evolution API
       let apiResponse;
@@ -1152,40 +1226,22 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         where: { lineId: availableLine.id },
       });
 
-      if (currentOperatorsCount >= 2) {
-        return { success: false, reason: 'Linha já está com 2 operadores' };
+      // Vincular operador à nova linha usando método com transaction + lock
+      try {
+        await this.linesService.assignOperatorToLine(availableLine.id, userId); // ✅ COM LOCK
+
+        console.log(`✅ [WebSocket] Linha realocada para operador ${operator.name}: ${oldLinePhone || 'sem linha'} → ${availableLine.phone}`);
+
+        return {
+          success: true,
+          oldLinePhone: oldLinePhone || undefined,
+          newLinePhone: availableLine.phone,
+          newLineId: availableLine.id,
+        };
+      } catch (error: any) {
+        console.error(`❌ [WebSocket] Erro ao vincular nova linha:`, error.message);
+        return { success: false, reason: error.message };
       }
-
-      // Vincular operador à nova linha
-      await (this.prisma as any).lineOperator.create({
-        data: {
-          lineId: availableLine.id,
-          userId: userId,
-        },
-      });
-
-      // Atualizar campos legacy para compatibilidade
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: { line: availableLine.id },
-      });
-
-      if (currentOperatorsCount === 0) {
-        // Primeiro operador - atualizar linkedTo
-        await this.prisma.linesStock.update({
-          where: { id: availableLine.id },
-          data: { linkedTo: userId },
-        });
-      }
-
-      console.log(`✅ [WebSocket] Linha realocada para operador ${operator.name}: ${oldLinePhone || 'sem linha'} → ${availableLine.phone}`);
-
-      return {
-        success: true,
-        oldLinePhone: oldLinePhone || undefined,
-        newLinePhone: availableLine.phone,
-        newLineId: availableLine.id,
-      };
     } catch (error: any) {
       console.error('❌ [WebSocket] Erro ao realocar linha:', error);
       return { success: false, reason: error.message || 'Erro desconhecido' };

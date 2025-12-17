@@ -1227,33 +1227,46 @@ export class ReportsService {
 
     const result = lines.map(line => {
       const segment = line.segment ? segmentMap.get(line.segment) : null;
-      const operators = operatorsByLine.get(line.id) || [];
-      
-      // Ordenar por data de criação para pegar primeira e última
-      const sortedOperators = [...operators].sort((a, b) => 
-        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-      );
-      
-      // Primeira atribuição (mais antiga)
-      const firstAssignment = sortedOperators.length > 0 ? sortedOperators[0] : null;
-      // Última atribuição (mais recente)
-      const lastAssignment = sortedOperators.length > 0 ? sortedOperators[sortedOperators.length - 1] : null;
-      
-      // Formatar lista de operadores
-      const operadoresList = operators.map((op: any, index: number) => 
-        `${op.user.name} (${op.user.email})`
-      ).join('; ');
 
       return {
-        id: line.id,
+        Carteira: this.normalizeText(segment?.name) || 'Sem segmento',
         Número: line.phone,
         Blindado: line.lineStatus === 'ban' ? 'Sim' : line.lineStatus === 'active' ? 'Não' : 'Desconhecido',
+        'Data de Transferencia': this.formatDateTime(line.createdAt),
+      };
+    });
+
+    // Normalizar todos os campos de texto do resultado
+    return this.normalizeObject(result);
+  }
+
+  /**
+   * RELATÓRIO DE USUÁRIOS
+   * Estrutura: Nome, E-mail, Segmento, ROLE
+   */
+  async getUsuariosReport(filters: ReportFilterDto) {
+    const whereClause: any = {};
+
+    if (filters.segment) {
+      whereClause.segment = filters.segment;
+    }
+
+    const users = await this.prisma.user.findMany({
+      where: whereClause,
+      orderBy: { name: 'asc' },
+    });
+
+    const segments = await this.prisma.segment.findMany();
+    const segmentMap = new Map(segments.map(s => [s.id, s]));
+
+    const result = users.map(user => {
+      const segment = user.segment ? segmentMap.get(user.segment) : null;
+
+      return {
+        Nome: this.normalizeText(user.name),
+        'E-mail': this.normalizeText(user.email),
         Segmento: this.normalizeText(segment?.name) || 'Sem segmento',
-        'Operador(es) Vinculado(s)': this.normalizeText(operadoresList) || 'Sem operador',
-        'Data e Hora da Primeira Atribuição': firstAssignment ? this.formatDateTime(firstAssignment.createdAt) : 'N/A',
-        'Data e Hora da Última Atribuição': lastAssignment ? this.formatDateTime(lastAssignment.createdAt) : 'N/A',
-        'Data de Criação': this.formatDate(line.createdAt),
-        'Data de Atualização': this.formatDate(line.updatedAt),
+        ROLE: user.role.toUpperCase(),
       };
     });
 

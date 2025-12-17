@@ -870,6 +870,7 @@ const reportEndpoints: Record<string, string> = {
   'detalhado_conversas': 'detalhado-conversas',
   'linhas': 'linhas',
   'resumo_atendimentos': 'resumo-atendimentos',
+  'usuarios': 'usuarios',
   'hiper_personalizado': 'hiper-personalizado',
   'consolidado': 'consolidado',
 };
@@ -897,7 +898,8 @@ const arrayToCSV = (data: any[]): string => {
     ),
   ];
   
-  return csvRows.join('\n');
+  // Adicionar BOM (Byte Order Mark) para UTF-8 para garantir encoding correto no Excel
+  return '\ufeff' + csvRows.join('\n');
 };
 
 export const reportsService = {

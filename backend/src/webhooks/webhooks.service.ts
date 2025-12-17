@@ -220,6 +220,26 @@ export class WebhooksService {
           }
         }
 
+        // Se ainda não encontrou operador online, adicionar à fila de mensagens
+        if (!finalOperatorId) {
+          console.log(`📥 [Webhook] Nenhum operador online, adicionando mensagem à fila...`);
+          
+          // Adicionar à fila de mensagens
+          await (this.prisma as any).messageQueue.create({
+            data: {
+              contactPhone: from,
+              contactName: contact.name,
+              message: messageText,
+              messageType,
+              mediaUrl,
+              segment: line.segment || undefined,
+              status: 'pending',
+            },
+          });
+          
+          return { status: 'queued', message: 'Mensagem adicionada à fila (nenhum operador online)' };
+        }
+
         // Criar conversa
         const conversation = await this.conversationsService.create({
           contactName: contact.name,
@@ -350,36 +370,21 @@ export class WebhooksService {
               }
 
               if (operatorWithoutLine) {
-                // Vincular operador à linha usando a nova tabela
-                await this.prisma.lineOperator.create({
-                  data: {
+                // Vincular operador à linha usando método com transaction + lock
+                try {
+                  await this.linesService.assignOperatorToLine(line.id, operatorWithoutLine.id);
+
+                  console.log(`✅ [Webhook] Linha ${line.phone} vinculada automaticamente ao operador ${operatorWithoutLine.name} (segmento ${line.segment || 'sem segmento'})`);
+                  
+                  // Notificar via WebSocket
+                  this.websocketGateway.emitToUser(operatorWithoutLine.id, 'line-assigned', {
                     lineId: line.id,
-                    userId: operatorWithoutLine.id,
-                  },
-                });
-
-                // Atualizar campos legacy para compatibilidade
-                await this.prisma.user.update({
-                  where: { id: operatorWithoutLine.id },
-                  data: { line: line.id },
-                });
-
-                if (currentOperatorsCount === 0) {
-                  // Primeiro operador - atualizar linkedTo
-                  await this.prisma.linesStock.update({
-                    where: { id: line.id },
-                    data: { linkedTo: operatorWithoutLine.id },
+                    linePhone: line.phone,
+                    message: `Você foi vinculado à linha ${line.phone} automaticamente.`,
                   });
+                } catch (error) {
+                  console.error(`❌ [Webhook] Erro ao vincular linha ${line.id} ao operador ${operatorWithoutLine.id}:`, error.message);
                 }
-
-                console.log(`✅ [Webhook] Linha ${line.phone} vinculada automaticamente ao operador ${operatorWithoutLine.name} (segmento ${line.segment || 'sem segmento'})`);
-                
-                // Notificar via WebSocket
-                this.websocketGateway.emitToUser(operatorWithoutLine.id, 'line-assigned', {
-                  lineId: line.id,
-                  linePhone: line.phone,
-                  message: `Você foi vinculado à linha ${line.phone} automaticamente.`,
-                });
               } else {
                 console.log(`ℹ️ [Webhook] Linha ${line.phone} conectada, mas nenhum operador online sem linha encontrado${isDefaultLine ? '' : ` no segmento ${line.segment || 'sem segmento'}`}`);
               }

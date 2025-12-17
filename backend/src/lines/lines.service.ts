@@ -568,24 +568,36 @@ export class LinesService {
           continue; // Operador já tem outra linha ou não existe
         }
 
-        // Buscar uma nova linha ativa do mesmo segmento
+        // Buscar uma nova linha ativa do mesmo segmento (aceita linhas com 1 operador)
         let availableLines = await this.prisma.linesStock.findMany({
           where: {
             lineStatus: 'active',
             segment: line.segment,
-            operators: {
-              none: {}, // Linha sem operadores vinculados
-            },
           },
           include: {
-            operators: true,
+            operators: {
+              include: {
+                user: true,
+              },
+            },
           },
         });
 
         // Filtrar por evolutions ativas
         availableLines = await this.controlPanelService.filterLinesByActiveEvolutions(availableLines, operator.segment || undefined);
 
-        const availableLine = availableLines.find(l => l.operators.length < 2);
+        // Aceitar linhas com menos de 2 operadores e que não tenham operadores de outro segmento
+        const availableLine = availableLines.find(l => {
+          if (l.operators.length >= 2) return false;
+          
+          // Verificar se todos os operadores são do mesmo segmento do operador atual
+          if (l.operators.length > 0 && operator.segment) {
+            const allSameSegment = l.operators.every(lo => lo.user.segment === operator.segment);
+            if (!allSameSegment) return false;
+          }
+          
+          return true;
+        });
 
         if (availableLine) {
           // Vincular nova linha ao operador usando a tabela LineOperator
@@ -827,69 +839,91 @@ export class LinesService {
   }
 
   // Vincular operador à linha (máximo 2 operadores por linha)
+  // Usa transação + lock para evitar race conditions
   async assignOperatorToLine(lineId: number, userId: number): Promise<void> {
-    // Verificar se a linha existe e está ativa
-    const line = await this.prisma.linesStock.findUnique({
-      where: { id: lineId },
-    });
+    // Usar transação com lock para evitar race conditions
+    return await this.prisma.$transaction(async (tx) => {
+      // Lock na linha para evitar atribuições simultâneas
+      const line = await tx.linesStock.findUnique({
+        where: { id: lineId },
+      });
 
-    if (!line) {
-      throw new NotFoundException('Linha não encontrada');
-    }
+      if (!line) {
+        throw new NotFoundException('Linha não encontrada');
+      }
 
-    if (line.lineStatus !== 'active') {
-      throw new BadRequestException('Linha não está ativa');
-    }
+      if (line.lineStatus !== 'active') {
+        throw new BadRequestException('Linha não está ativa');
+      }
 
-    // Verificar se a linha está em uma evolution ativa
-    const activeEvolutions = await this.controlPanelService.getActiveEvolutions();
-    if (activeEvolutions && activeEvolutions.length > 0 && !activeEvolutions.includes(line.evolutionName)) {
-      throw new BadRequestException(`Linha da evolution '${line.evolutionName}' não está ativa para atribuição`);
-    }
+      // Verificar se a linha está em uma evolution ativa
+      const activeEvolutions = await this.controlPanelService.getActiveEvolutions();
+      if (activeEvolutions && activeEvolutions.length > 0 && !activeEvolutions.includes(line.evolutionName)) {
+        throw new BadRequestException(`Linha da evolution '${line.evolutionName}' não está ativa para atribuição`);
+      }
 
-    // Verificar se a linha já tem 2 operadores
-    const currentOperators = await this.prisma.lineOperator.count({
-      where: { lineId },
-    });
+      // Verificar se a linha já tem 2 operadores (com lock)
+      const currentOperators = await tx.lineOperator.count({
+        where: { lineId },
+      });
 
-    if (currentOperators >= 2) {
-      throw new BadRequestException('Linha já possui o máximo de 2 operadores vinculados');
-    }
+      if (currentOperators >= 2) {
+        throw new BadRequestException('Linha já possui o máximo de 2 operadores vinculados');
+      }
 
-    // Verificar se o operador já está vinculado a esta linha
-    const existing = await this.prisma.lineOperator.findUnique({
-      where: {
-        lineId_userId: {
+      // Verificar se o operador já está vinculado a esta linha
+      const existing = await tx.lineOperator.findUnique({
+        where: {
+          lineId_userId: {
+            lineId,
+            userId,
+          },
+        },
+      });
+
+      if (existing) {
+        throw new BadRequestException('Operador já está vinculado a esta linha');
+      }
+
+      // Verificar se operador já tem outra linha
+      const operatorCurrentLine = await tx.lineOperator.findFirst({
+        where: { userId },
+      });
+
+      if (operatorCurrentLine && operatorCurrentLine.lineId !== lineId) {
+        // Desvincular da linha anterior
+        await tx.lineOperator.deleteMany({
+          where: { userId, lineId: operatorCurrentLine.lineId },
+        });
+      }
+
+      // Criar vínculo
+      await tx.lineOperator.create({
+        data: {
           lineId,
           userId,
         },
-      },
+      });
+
+      // Atualizar campo legacy para compatibilidade
+      await tx.user.update({
+        where: { id: userId },
+        data: { line: lineId },
+      });
+
+      // Atualizar linkedTo apenas se for o primeiro operador
+      if (currentOperators === 0) {
+        await tx.linesStock.update({
+          where: { id: lineId },
+          data: { linkedTo: userId },
+        });
+      }
+
+      console.log(`✅ Operador ${userId} vinculado à linha ${lineId} (com lock)`);
+    }, {
+      isolationLevel: 'Serializable', // Nível mais alto de isolamento para evitar race conditions
+      timeout: 10000, // 10 segundos de timeout
     });
-
-    if (existing) {
-      throw new BadRequestException('Operador já está vinculado a esta linha');
-    }
-
-    // Criar vínculo
-    await this.prisma.lineOperator.create({
-      data: {
-        lineId,
-        userId,
-      },
-    });
-
-    // Atualizar campo legacy para compatibilidade
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { line: lineId },
-    });
-
-    await this.prisma.linesStock.update({
-      where: { id: lineId },
-      data: { linkedTo: userId }, // Manter primeiro operador no campo legacy
-    });
-
-    console.log(`✅ Operador ${userId} vinculado à linha ${lineId}`);
   }
 
   // Desvincular operador da linha

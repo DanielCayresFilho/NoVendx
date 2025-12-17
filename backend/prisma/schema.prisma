@@ -355,3 +355,25 @@ model SendHistory {
   @@index([contactPhone])
   @@index([sentAt])
 }
+
+// Fila de mensagens quando não há operador online
+model MessageQueue {
+  id           Int       @id @default(autoincrement())
+  contactPhone String
+  contactName  String?
+  message      String    @db.Text
+  messageType  String    @default("text")
+  mediaUrl     String?
+  segment      Int?
+  status       String    @default("pending") // pending, processing, sent, failed
+  attempts     Int       @default(0)
+  errorMessage String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  processedAt  DateTime?
+
+  @@index([status])
+  @@index([contactPhone])
+  @@index([segment])
+  @@index([createdAt])
+}

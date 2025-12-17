@@ -107,6 +107,12 @@ export class ReportsController {
     return this.reportsService.getResumoAtendimentosReport(filters);
   }
 
+  @Get('usuarios')
+  @Roles('admin', 'supervisor')
+  async getUsuariosReport(@Query() filters: ReportFilterDto) {
+    return this.reportsService.getUsuariosReport(filters);
+  }
+
   @Get('hiper-personalizado')
   @Roles('admin', 'supervisor')
   async getHiperPersonalizadoReport(@Query() filters: ReportFilterDto) {
@@ -135,6 +141,7 @@ export class ReportsController {
       detalhadoConversas,
       linhas,
       resumoAtendimentos,
+      usuarios,
       hiperPersonalizado,
     ] = await Promise.all([
       this.reportsService.getOpSinteticoReport(filters),
@@ -151,6 +158,7 @@ export class ReportsController {
       this.reportsService.getDetalhadoConversasReport(filters),
       this.reportsService.getLinhasReport(filters),
       this.reportsService.getResumoAtendimentosReport(filters),
+      this.reportsService.getUsuariosReport(filters),
       this.reportsService.getHiperPersonalizadoReport(filters),
     ]);
 
@@ -175,6 +183,7 @@ export class ReportsController {
         detalhadoConversas,
         linhas,
         resumoAtendimentos,
+        usuarios,
         hiperPersonalizado,
       },
     };
