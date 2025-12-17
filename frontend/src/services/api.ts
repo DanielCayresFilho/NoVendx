@@ -295,6 +295,16 @@ export const linesService = {
     return apiRequest('/lines/activators-productivity');
   },
 
+  getAllocationStats: async (): Promise<{
+    totalActiveLines: number;
+    linesWithOperators: number;
+    linesWithoutOperators: number;
+    linesWithOneOperator: number;
+    linesWithTwoOperators: number;
+  }> => {
+    return apiRequest('/lines/allocation-stats');
+  },
+
   getInstances: async (evolutionName: string): Promise<Array<{ instanceName: string; status: string }>> => {
     return apiRequest(`/lines/instances/${evolutionName}`);
   },

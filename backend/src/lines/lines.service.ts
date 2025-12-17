@@ -1020,6 +1020,44 @@ export class LinesService {
     return productivity.sort((a, b) => b.totalLines - a.totalLines); // Ordenar por total de linhas (maior primeiro)
   }
 
+  /**
+   * Busca estatísticas de alocação de linhas com operadores
+   */
+  async getLinesAllocationStats() {
+    // Total de linhas ativas
+    const totalActiveLines = await this.prisma.linesStock.count({
+      where: { lineStatus: 'active' },
+    });
+
+    // Buscar todas as linhas ativas com seus operadores
+    const activeLines = await this.prisma.linesStock.findMany({
+      where: { lineStatus: 'active' },
+      include: {
+        operators: true,
+      },
+    });
+
+    // Contar linhas com vínculo (pelo menos 1 operador)
+    const linesWithOperatorsCount = activeLines.filter(line => line.operators.length > 0).length;
+
+    // Linhas sem vínculo
+    const linesWithoutOperatorsCount = totalActiveLines - linesWithOperatorsCount;
+
+    // Linhas com 1 operador
+    const linesWithOneOperatorCount = activeLines.filter(line => line.operators.length === 1).length;
+
+    // Linhas com 2 operadores
+    const linesWithTwoOperatorsCount = activeLines.filter(line => line.operators.length === 2).length;
+
+    return {
+      totalActiveLines,
+      linesWithOperators: linesWithOperatorsCount,
+      linesWithoutOperators: linesWithoutOperatorsCount,
+      linesWithOneOperator: linesWithOneOperatorCount,
+      linesWithTwoOperators: linesWithTwoOperatorsCount,
+    };
+  }
+
   // Tentar vincular linha automaticamente a operadores online sem linha do mesmo segmento (máximo 2)
   private async tryAssignLineToOperator(lineId: number, segment: number) {
     try {

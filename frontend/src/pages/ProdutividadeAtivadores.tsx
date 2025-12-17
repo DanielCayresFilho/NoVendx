@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, TrendingUp, Phone, CheckCircle, XCircle, Calendar } from "lucide-react";
+import { Loader2, TrendingUp, Phone, CheckCircle, XCircle, Calendar, Users, UserPlus, UserMinus } from "lucide-react";
 import { linesService } from "@/services/api";
 import {
   Table,
@@ -32,8 +32,17 @@ interface ActivatorProductivity {
   createdAt: string;
 }
 
+interface AllocationStats {
+  totalActiveLines: number;
+  linesWithOperators: number;
+  linesWithoutOperators: number;
+  linesWithOneOperator: number;
+  linesWithTwoOperators: number;
+}
+
 export default function ProdutividadeAtivadores() {
   const [productivity, setProductivity] = useState<ActivatorProductivity[]>([]);
+  const [allocationStats, setAllocationStats] = useState<AllocationStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedActivator, setSelectedActivator] = useState<ActivatorProductivity | null>(null);
 
@@ -44,8 +53,12 @@ export default function ProdutividadeAtivadores() {
   const loadProductivity = async () => {
     setIsLoading(true);
     try {
-      const data = await linesService.getActivatorsProductivity();
-      setProductivity(data);
+      const [productivityData, statsData] = await Promise.all([
+        linesService.getActivatorsProductivity(),
+        linesService.getAllocationStats(),
+      ]);
+      setProductivity(productivityData);
+      setAllocationStats(statsData);
     } catch (error) {
       console.error("Erro ao carregar produtividade:", error);
     } finally {
@@ -85,7 +98,7 @@ export default function ProdutividadeAtivadores() {
           </p>
         </div>
 
-        {/* Cards de resumo */}
+        {/* Cards de resumo - Produtividade */}
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -126,6 +139,71 @@ export default function ProdutividadeAtivadores() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Cards de alocação de operadores */}
+        {allocationStats && (
+          <div className="grid gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Linhas com Operador</CardTitle>
+                <Users className="h-4 w-4 text-blue-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-blue-600">{allocationStats.linesWithOperators}</div>
+                <p className="text-xs text-muted-foreground">
+                  {allocationStats.totalActiveLines > 0 
+                    ? Math.round((allocationStats.linesWithOperators / allocationStats.totalActiveLines) * 100) 
+                    : 0}% do total
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Linhas sem Operador</CardTitle>
+                <UserMinus className="h-4 w-4 text-orange-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-orange-600">{allocationStats.linesWithoutOperators}</div>
+                <p className="text-xs text-muted-foreground">
+                  {allocationStats.totalActiveLines > 0 
+                    ? Math.round((allocationStats.linesWithoutOperators / allocationStats.totalActiveLines) * 100) 
+                    : 0}% do total
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Linhas com 1 Operador</CardTitle>
+                <UserPlus className="h-4 w-4 text-yellow-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-yellow-600">{allocationStats.linesWithOneOperator}</div>
+                <p className="text-xs text-muted-foreground">
+                  {allocationStats.linesWithOperators > 0 
+                    ? Math.round((allocationStats.linesWithOneOperator / allocationStats.linesWithOperators) * 100) 
+                    : 0}% das alocadas
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Linhas com 2 Operadores</CardTitle>
+                <Users className="h-4 w-4 text-purple-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-purple-600">{allocationStats.linesWithTwoOperators}</div>
+                <p className="text-xs text-muted-foreground">
+                  {allocationStats.linesWithOperators > 0 
+                    ? Math.round((allocationStats.linesWithTwoOperators / allocationStats.linesWithOperators) * 100) 
+                    : 0}% das alocadas
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         <div className="grid gap-6 md:grid-cols-2">
           {/* Tabela de ativadores */}

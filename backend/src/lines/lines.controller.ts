@@ -77,6 +77,12 @@ export class LinesController {
     return this.linesService.getActivatorsProductivity();
   }
 
+  @Get('allocation-stats')
+  @Roles(Role.admin, Role.supervisor)
+  getAllocationStats() {
+    return this.linesService.getLinesAllocationStats();
+  }
+
   @Get(':id')
   @Roles(Role.admin, Role.ativador)
   findOne(@Param('id') id: string) {
