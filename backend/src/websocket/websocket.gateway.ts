@@ -101,7 +101,10 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         data: { status: 'Online' },
       });
 
-      console.log(`✅ Usuário ${user.name} (${user.role}) conectado via WebSocket`);
+      // Log apenas para operadores (fluxo principal)
+      if (user.role === 'operator') {
+        console.log(`✅ Operador ${user.name} conectado`);
+      }
 
       // Se for operador, verificar e sincronizar linha
       if (user.role === 'operator') {
@@ -116,8 +119,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
           if (!existingLink) {
             // Sincronizar: criar entrada na tabela LineOperator
-            console.log(`🔄 [WebSocket] Sincronizando linha ${user.line} para operador ${user.name} na tabela LineOperator`);
-            
             // Verificar se a linha ainda existe e está ativa
             const line = await this.prisma.linesStock.findUnique({
               where: { id: user.line },
@@ -132,15 +133,11 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               if (currentOperatorsCount < 2) {
                 try {
                   await this.linesService.assignOperatorToLine(user.line, user.id); // ✅ COM LOCK
-                  console.log(`✅ [WebSocket] Linha ${user.line} sincronizada para operador ${user.name}`);
                 } catch (error) {
-                  console.warn(`⚠️ [WebSocket] Erro ao sincronizar linha ${user.line} para ${user.name}:`, error.message);
+                  console.error(`❌ [WebSocket] Erro ao sincronizar linha ${user.line} para ${user.name}:`, error.message);
                 }
-              } else {
-                console.warn(`⚠️ [WebSocket] Linha ${user.line} já tem 2 operadores, não foi possível sincronizar para ${user.name}`);
               }
             } else {
-              console.warn(`⚠️ [WebSocket] Linha ${user.line} não existe ou não está ativa, removendo do operador ${user.name}`);
               // Remover linha inválida do operador
               await this.prisma.user.update({
                 where: { id: user.id },
@@ -148,8 +145,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               });
               user.line = null;
             }
-          } else {
-            console.log(`✅ [WebSocket] Operador ${user.name} já está sincronizado na tabela LineOperator`);
           }
         }
 
@@ -201,7 +196,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                   data: { segment: user.segment },
                 });
 
-                console.log(`🔄 [WebSocket] Linha padrão ${availableLine.phone} atualizada para o segmento ${user.segment} do operador ${user.name}`);
                 availableLine.segment = user.segment; // Atualizar objeto local
               }
             }
@@ -228,7 +222,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                 
                 if (!allSameSegment) {
                   // Linha já tem operador de outro segmento, não pode atribuir
-                  console.warn(`⚠️ [WebSocket] Linha ${availableLine.phone} já tem operador de outro segmento, pulando para operador ${user.name}`);
                   availableLine = null; // Forçar busca de outra linha
                 }
               }
@@ -238,18 +231,16 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                 // Vincular operador à linha usando método com transaction + lock
                 try {
                   await this.linesService.assignOperatorToLine(availableLine.id, user.id);
-                  
-                  // Atualizar user object
-                  user.line = availableLine.id;
 
-                  console.log(`✅ [WebSocket] Linha ${availableLine.phone} vinculada automaticamente ao operador ${user.name} (segmento ${availableLine.segment || 'sem segmento'})`);
-                  
-                  // Notificar o operador
-                  client.emit('line-assigned', {
-                    lineId: availableLine.id,
-                    linePhone: availableLine.phone,
-                    message: `Você foi vinculado à linha ${availableLine.phone} automaticamente.`,
-                  });
+              // Atualizar user object
+              user.line = availableLine.id;
+              
+              // Notificar o operador
+              client.emit('line-assigned', {
+                lineId: availableLine.id,
+                linePhone: availableLine.phone,
+                message: `Você foi vinculado à linha ${availableLine.phone} automaticamente.`,
+              });
                 } catch (error) {
                   console.error(`❌ [WebSocket] Erro ao vincular linha ${availableLine.id} ao operador ${user.id}:`, error.message);
                   // Continuar para tentar outra linha
@@ -261,8 +252,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
           
           // Se ainda não tem linha, tentar busca mais ampla (qualquer linha ativa)
           if (!availableLine || !user.line) {
-            console.warn(`⚠️ [WebSocket] Nenhuma linha disponível (do segmento ou padrão) para o operador ${user.name}. Tentando busca ampla...`);
-            
             // Buscar qualquer linha ativa (sem filtro de segmento)
             const anyActiveLines = await this.prisma.linesStock.findMany({
               where: {
@@ -303,7 +292,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                     }
                     
                     user.line = fallbackLine.id;
-                    console.log(`✅ [WebSocket] Linha ${fallbackLine.phone} atribuída ao operador ${user.name} (busca ampla)`);
                     
                     client.emit('line-assigned', {
                       lineId: fallbackLine.id,
@@ -315,16 +303,14 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                     // Continuar para tentar outra linha
                   }
                 }
-              }
-            } else {
+            }
+          } else {
               console.error(`❌ [WebSocket] Nenhuma linha disponível para o operador ${user.name} após todas as tentativas`);
               // Notificar operador que não há linha disponível
               client.emit('no-line-available', {
                 message: 'Nenhuma linha disponível no momento. Você será notificado quando uma linha for liberada.',
               });
               // Nota: Fila de espera será implementada futuramente se necessário
-              // Por enquanto, apenas notificamos o operador
-              console.log(`📋 [WebSocket] Operador ${user.name} sem linha disponível - será notificado quando houver linha`);
             }
           }
         }
@@ -400,9 +386,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               }
             }
 
-            if (pendingMessages.length > 0) {
-              console.log(`✅ [WebSocket] ${pendingMessages.length} mensagem(ns) da fila processada(s) para operador ${user.name}`);
-            }
           } catch (error) {
             console.error('❌ [WebSocket] Erro ao processar fila de mensagens:', error);
           }
@@ -419,12 +402,12 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       const userId = client.data.user.id;
       
       try {
-        // Atualizar status do usuário para Offline
-        await this.prisma.user.update({
-          where: { id: userId },
-          data: { status: 'Offline' },
-        });
-
+      // Atualizar status do usuário para Offline
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { status: 'Offline' },
+      });
+      
         // Registrar evento de desconexão
         if (client.data.user.role === 'operator') {
           await this.systemEventsService.logEvent(
@@ -436,7 +419,10 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
           );
         }
         
-        console.log(`❌ Usuário ${client.data.user.name} desconectado do WebSocket`);
+        // Log apenas para operadores (fluxo principal)
+        if (client.data.user.role === 'operator') {
+          console.log(`❌ Operador ${client.data.user.name} desconectado`);
+        }
       } catch (error) {
         console.error(`❌ [WebSocket] Erro ao atualizar status na desconexão:`, error);
       } finally {
@@ -452,10 +438,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     @MessageBody() data: { contactPhone: string; message: string; messageType?: string; mediaUrl?: string; fileName?: string; isNewConversation?: boolean },
   ) {
     const startTime = Date.now(); // Para métricas de latência
-    console.log(`📤 [WebSocket] Recebido send-message:`, JSON.stringify(data, null, 2));
-    
     const user = client.data.user;
-    console.log(`👤 [WebSocket] Usuário: ${user?.name}, role: ${user?.role}, line: ${user?.line}`);
 
     if (!user) {
       console.error('❌ [WebSocket] Usuário não autenticado');
@@ -475,7 +458,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
     // Se operador não tem linha, tentar atribuir automaticamente
     if (!currentLineId) {
-      console.log(`🔄 [WebSocket] Operador ${user.name} sem linha, tentando atribuir automaticamente...`);
       
       let availableLine = null;
 
@@ -517,7 +499,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               where: { id: availableLine.id },
               data: { segment: user.segment },
             });
-            console.log(`🔄 [WebSocket] Linha padrão ${availableLine.phone} atualizada para o segmento ${user.segment} do operador ${user.name}`);
           }
         }
       }
@@ -543,7 +524,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
             
             if (!allSameSegment) {
               // Linha já tem operador de outro segmento, não pode atribuir
-              console.warn(`⚠️ [WebSocket] Linha ${availableLine.phone} já tem operador de outro segmento, não pode atribuir para ${user.name}`);
               availableLine = null;
             }
           }
@@ -577,7 +557,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
       // Se ainda não tem linha após tentar atribuir, fazer busca ampla (qualquer linha ativa)
       if (!currentLineId) {
-        console.warn(`⚠️ [WebSocket] Operador ${user.name} ainda sem linha, tentando busca ampla...`);
         
         // Buscar qualquer linha ativa (sem filtro de segmento)
         const anyActiveLines = await this.prisma.linesStock.findMany({
@@ -620,8 +599,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                 
                 user.line = fallbackLine.id;
                 currentLineId = fallbackLine.id;
-                console.log(`✅ [WebSocket] Linha ${fallbackLine.phone} atribuída ao operador ${user.name} (busca ampla no envio de mensagem)`);
-                
                 client.emit('line-assigned', {
                   lineId: fallbackLine.id,
                   linePhone: fallbackLine.phone,
@@ -630,7 +607,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               } catch (error: any) {
                 // Se o erro for "já está vinculado", apenas logar e continuar (não é erro crítico)
                 if (error.message?.includes('já está vinculado')) {
-                  console.log(`ℹ️ [WebSocket] Operador ${user.id} já está vinculado à linha ${fallbackLine.id}`);
                   // Atualizar user.line mesmo assim
                   user.line = fallbackLine.id;
                   currentLineId = fallbackLine.id;
@@ -662,10 +638,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         },
       });
 
-      console.log(`🔍 [WebSocket] Verificando permissão 1x1 para usuário ${user.id}:`, {
-        oneToOneActive: fullUser?.oneToOneActive,
-        hasPermission: fullUser?.oneToOneActive === true,
-      });
 
       if (!fullUser?.oneToOneActive) {
         console.error('❌ [WebSocket] Operador sem permissão para 1x1');
@@ -678,7 +650,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       // Verificar CPC
       const cpcCheck = await this.controlPanelService.canContactCPC(data.contactPhone, user.segment);
       if (!cpcCheck.allowed) {
-        console.warn('⚠️ [WebSocket] Bloqueio CPC:', cpcCheck.reason);
         client.emit('message-error', { 
           error: cpcCheck.reason,
           hoursRemaining: cpcCheck.hoursRemaining,
@@ -693,7 +664,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         user.segment
       );
       if (!repescagemCheck.allowed) {
-        console.warn('⚠️ [WebSocket] Bloqueio Repescagem:', repescagemCheck.reason);
         client.emit('message-error', { error: repescagemCheck.reason });
         return { error: repescagemCheck.reason };
       }
@@ -701,7 +671,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       // Validação de número: Verificar se o número é válido antes de enviar
       const phoneValidation = this.phoneValidationService.isValidFormat(data.contactPhone);
       if (!phoneValidation) {
-        console.warn(`⚠️ [WebSocket] Número inválido: ${data.contactPhone}`);
         client.emit('message-error', { 
           error: 'Número de telefone inválido. Verifique o formato do número.' 
         });
@@ -738,7 +707,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       const isResponse = !data.isNewConversation; // Se não é nova conversa, é resposta
       const humanizedDelay = await this.humanizationService.getHumanizedDelay(messageLength, isResponse);
       
-      console.log(`⏱️ [WebSocket] Aplicando delay humanizado de ${Math.round(humanizedDelay)}ms antes de enviar mensagem`);
       await this.humanizationService.sleep(humanizedDelay);
 
       // Health check: Verificar se a linha está realmente conectada no Evolution (com cache)
@@ -765,10 +733,8 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         
         // Se não está explicitamente desconectado, considerar como conectado (incluindo "unknown")
         if (isExplicitlyDisconnected && !isConnected) {
-          console.warn(`⚠️ [WebSocket] Linha ${line.phone} está explicitamente desconectada no Evolution (status: ${connectionState})`);
-          
           // Realocação automática: buscar nova linha para o operador
-          console.log(`🔄 [WebSocket] Iniciando realocação automática de linha para operador ${user.name}...`);
+          console.warn(`⚠️ [WebSocket] Linha ${line.phone} desconectada. Realocando para ${user.name}...`);
           const reallocationResult = await this.lineAssignmentService.reallocateLineForOperator(user.id, user.segment, currentLineId);
           
           // Verificar se realmente conseguiu uma NOVA linha (diferente da atual)
@@ -777,7 +743,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
             user.line = reallocationResult.lineId;
             currentLineId = reallocationResult.lineId;
             
-            console.log(`✅ [WebSocket] Linha realocada automaticamente: ${line.phone} → ${reallocationResult.linePhone}`);
+            console.log(`✅ [WebSocket] Linha realocada: ${line.phone} → ${reallocationResult.linePhone}`);
             
             // Tentar enviar mensagem novamente com a nova linha
             // Recarregar dados da nova linha
@@ -789,7 +755,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               // Atualizar variável line para usar a nova linha
               line = newLine;
               // Continuar o fluxo normalmente com a nova linha
-              console.log(`🔄 [WebSocket] Continuando envio de mensagem com nova linha ${newLine.phone}`);
             } else {
               client.emit('message-error', { 
                 error: `Linha ${line.phone} desconectada. Nova linha atribuída, mas não foi possível enviar a mensagem. Tente novamente.` 
@@ -805,7 +770,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         }
       } catch (healthError: any) {
         // Erro no health check não deve bloquear envio (pode ser problema temporário da API)
-        console.warn(`⚠️ [WebSocket] Erro ao verificar health da linha ${line.phone}: ${healthError.message}. Continuando envio.`);
       }
 
       // Enviar mensagem via Evolution API
@@ -862,7 +826,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
             // URL relativa do nosso servidor - pegar arquivo diretamente
             const filename = data.mediaUrl.replace('/media/', '');
             filePath = await this.mediaService.getFilePath(filename);
-            console.log(`📁 [WebSocket] Arquivo encontrado no servidor: ${filePath}`);
           } else if (data.mediaUrl.startsWith('http')) {
             // URL completa - verificar se é do nosso servidor
             const appUrl = process.env.APP_URL || 'https://api.newvend.taticamarketing.com.br';
@@ -871,10 +834,8 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               const urlPath = new URL(data.mediaUrl).pathname;
               const filename = urlPath.replace('/media/', '');
               filePath = await this.mediaService.getFilePath(filename);
-              console.log(`📁 [WebSocket] Arquivo do nosso servidor encontrado: ${filePath}`);
             } else {
               // URL externa - baixar temporariamente
-              console.log(`📥 [WebSocket] Baixando arquivo de URL externa: ${data.mediaUrl}`);
               let tempPath: string | null = null;
               try {
                 const response = await axios.get(data.mediaUrl, { 
@@ -882,9 +843,9 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                   timeout: 30000, // 30 segundos
                 });
                 tempPath = path.join('./uploads', `temp-${Date.now()}-${cleanFileName}`);
-                await fs.mkdir('./uploads', { recursive: true });
-                await fs.writeFile(tempPath, response.data);
-                filePath = tempPath;
+              await fs.mkdir('./uploads', { recursive: true });
+              await fs.writeFile(tempPath, response.data);
+              filePath = tempPath;
               } finally {
                 // Limpar arquivo temporário após uso (se ainda existir)
                 if (tempPath) {
@@ -904,10 +865,8 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
           }
 
           // Ler arquivo e converter para base64
-          console.log(`📖 [WebSocket] Lendo arquivo: ${filePath}`);
           const fileBuffer = await fs.readFile(filePath);
           const base64File = fileBuffer.toString('base64');
-          console.log(`✅ [WebSocket] Arquivo convertido para base64: ${base64File.length} caracteres`);
           
           // Determinar mimetype baseado na extensão
           const getMimeType = (filename: string): string => {
@@ -960,14 +919,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
             payload.caption = data.message;
           }
           
-          console.log(`📤 [WebSocket] Tentativa 1 - Enviando com URL:`, {
-            number: payload.number,
-            fileName: payload.fileName,
-            mediatype: payload.mediatype,
-            mediaUrl: fullMediaUrl,
-            hasCaption: !!payload.caption,
-          });
-          
           try {
             apiResponse = await axios.post(
               `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
@@ -978,14 +929,8 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               }
             );
             
-            console.log(`✅ [WebSocket] Documento enviado com sucesso via sendMedia (URL)`);
           } catch (urlError: any) {
             // Tentativa 2: Base64 puro
-            console.warn(`⚠️ [WebSocket] Tentativa 1 (URL) falhou, tentando com base64:`, {
-              status: urlError.response?.status,
-              message: urlError.response?.data?.response?.message || urlError.message,
-            });
-            
             payload = {
               number: data.contactPhone.replace(/\D/g, ''),
               mediatype: 'document',
@@ -997,14 +942,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               payload.caption = data.message;
             }
             
-            console.log(`📤 [WebSocket] Tentativa 2 - Enviando com base64:`, {
-              number: payload.number,
-              fileName: payload.fileName,
-              mediatype: payload.mediatype,
-              base64Length: base64File.length,
-              hasCaption: !!payload.caption,
-            });
-            
             try {
               apiResponse = await axios.post(
                 `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
@@ -1015,14 +952,8 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                 }
               );
               
-              console.log(`✅ [WebSocket] Documento enviado com sucesso via sendMedia (base64)`);
             } catch (base64Error: any) {
               // Tentativa 3: Campo "media"
-              console.warn(`⚠️ [WebSocket] Tentativa 2 (base64) falhou, tentando com campo "media":`, {
-                status: base64Error.response?.status,
-                message: base64Error.response?.data?.response?.message || base64Error.message,
-              });
-              
               payload = {
                 number: data.contactPhone.replace(/\D/g, ''),
                 mediatype: 'document',
@@ -1034,14 +965,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                 payload.caption = data.message;
               }
               
-              console.log(`📤 [WebSocket] Tentativa 3 - Enviando com campo "media":`, {
-                number: payload.number,
-                fileName: payload.fileName,
-                mediatype: payload.mediatype,
-                mediaLength: base64File.length,
-                hasCaption: !!payload.caption,
-              });
-              
               apiResponse = await axios.post(
                 `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
                 payload,
@@ -1051,7 +974,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                 }
               );
               
-              console.log(`✅ [WebSocket] Documento enviado com sucesso via sendMedia (media)`);
             }
           }
           
@@ -1104,7 +1026,8 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         mediaUrl: data.mediaUrl,
       });
 
-      console.log(`✅ [WebSocket] Mensagem salva no banco, ID: ${conversation.id}`);
+      // Log apenas para mensagens enviadas com sucesso (fluxo principal)
+      console.log(`✅ Mensagem enviada: ${user.name} → ${data.contactPhone}`);
       
       // Registrar mensagem do operador para controle de repescagem
       await this.controlPanelService.registerOperatorMessage(
@@ -1128,10 +1051,9 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         user.id,
         EventSeverity.INFO,
       );
-
+      
       // Emitir mensagem para o usuário (usar mesmo formato que new_message)
       client.emit('message-sent', { message: conversation });
-      console.log(`📤 [WebSocket] Emitido message-sent para o cliente`);
 
       // Se houver supervisores online do mesmo segmento, enviar para eles também
       this.emitToSupervisors(user.segment, 'new_message', { message: conversation });
@@ -1166,7 +1088,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       );
 
       // Tentar recuperar automaticamente: realocar linha e tentar novamente
-      console.log('🔄 [WebSocket] Tentando recuperar automaticamente...');
       const recoveryResult = await this.recoverAndRetryMessage(client, user, data, error);
       
       if (recoveryResult.success) {
@@ -1193,22 +1114,15 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
   ): Promise<{ success: boolean; conversation?: any; reason?: string }> {
     const maxRetries = 3;
     
-    console.log(`🔄 [WebSocket] Iniciando recuperação automática para operador ${user.name} (${user.id})`);
-    console.log(`📋 [WebSocket] Erro original: ${originalError.message || originalError.code || 'Desconhecido'}`);
-    
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      console.log(`🔄 [WebSocket] Tentativa de recuperação ${attempt}/${maxRetries}...`);
-      
       try {
         // 1. Realocar linha
-        console.log(`🔍 [WebSocket] Buscando nova linha para operador ${user.name}...`);
         const reallocationResult = await this.reallocateLineForOperator(user.id, user.segment);
         
         if (!reallocationResult.success) {
           console.warn(`⚠️ [WebSocket] Falha ao realocar linha na tentativa ${attempt}:`, reallocationResult.reason);
           if (attempt < maxRetries) {
             // Aguardar um pouco antes de tentar novamente
-            console.log(`⏳ [WebSocket] Aguardando ${1000 * attempt}ms antes da próxima tentativa...`);
             await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
             continue;
           }
@@ -1218,7 +1132,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         
         // 2. Atualizar user object com nova linha
         user.line = reallocationResult.newLineId;
-        console.log(`✅ [WebSocket] Linha realocada: ${reallocationResult.oldLinePhone || 'sem linha'} → ${reallocationResult.newLinePhone} (ID: ${reallocationResult.newLineId})`);
         
         // 3. Buscar dados da nova linha
         const newLine = await this.prisma.linesStock.findUnique({
@@ -1226,7 +1139,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         });
         
         if (!newLine || newLine.lineStatus !== 'active') {
-          console.warn(`⚠️ [WebSocket] Nova linha ${reallocationResult.newLineId} não está ativa (status: ${newLine?.lineStatus || 'não encontrada'})`);
           if (attempt < maxRetries) {
             await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
             continue;
@@ -1240,7 +1152,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         });
         
         if (!evolution) {
-          console.warn(`⚠️ [WebSocket] Evolution não encontrada para linha ${newLine.evolutionName}`);
           if (attempt < maxRetries) {
             await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
             continue;
@@ -1251,29 +1162,23 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         // 5. Verificar health da nova linha
         try {
           const instanceName = `line_${newLine.phone.replace(/\D/g, '')}`;
-          console.log(`🔍 [WebSocket] Verificando conexão da nova linha ${newLine.phone} (${instanceName})...`);
           const connectionState = await this.healthCheckCacheService.getConnectionStatus(
             evolution.evolutionUrl,
             evolution.evolutionKey,
             instanceName,
           );
-          console.log(`📊 [WebSocket] Status da conexão: ${connectionState}`);
           if (connectionState !== 'open' && connectionState !== 'OPEN' && connectionState !== 'connected' && connectionState !== 'CONNECTED') {
-            console.warn(`⚠️ [WebSocket] Nova linha ${newLine.phone} não está conectada (status: ${connectionState})`);
             if (attempt < maxRetries) {
               await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
               continue;
             }
             return { success: false, reason: 'Nova linha não está conectada' };
           }
-          console.log(`✅ [WebSocket] Nova linha ${newLine.phone} está conectada!`);
         } catch (healthError) {
-          console.warn(`⚠️ [WebSocket] Erro ao verificar health da nova linha:`, healthError.message);
           // Continuar mesmo assim - tentar enviar
         }
       
         // 6. Tentar enviar mensagem novamente com a nova linha
-        console.log(`📤 [WebSocket] Tentando enviar mensagem com nova linha ${newLine.phone}...`);
         const instanceName = `line_${newLine.phone.replace(/\D/g, '')}`;
         let apiResponse;
         
@@ -1365,7 +1270,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         }
         
         // 7. Se chegou aqui, mensagem foi enviada com sucesso!
-        console.log(`✅ [WebSocket] Mensagem enviada com sucesso após recuperação (tentativa ${attempt})`);
+        console.log(`✅ Mensagem enviada após recuperação: ${user.name} → ${data.contactPhone} (tentativa ${attempt})`);
         
         // Buscar contato
         const contact = await this.prisma.contact.findFirst({
@@ -1408,7 +1313,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         
         // Se não for a última tentativa, continuar
         if (attempt < maxRetries) {
-          console.log(`⏳ [WebSocket] Aguardando ${1000 * attempt}ms antes da próxima tentativa...`);
           await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
           continue;
         }
@@ -1419,7 +1323,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       }
     }
     
-    console.error(`❌ [WebSocket] Todas as ${maxRetries} tentativas de recuperação falharam`);
     return { success: false, reason: 'Todas as tentativas de recuperação falharam' };
   }
 
@@ -1584,7 +1487,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       try {
         await this.linesService.assignOperatorToLine(availableLine.id, userId); // ✅ COM LOCK
 
-        console.log(`✅ [WebSocket] Linha realocada para operador ${operator.name}: ${oldLinePhone || 'sem linha'} → ${availableLine.phone}`);
 
         // Registrar evento de realocação
         await this.systemEventsService.logEvent(
