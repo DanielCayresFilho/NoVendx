@@ -1191,6 +1191,58 @@ export class ReportsService {
       whereClause.segment = filters.segment;
     }
 
+    // Filtro de data: linhas cadastradas OU blindadas na data
+    if (filters.startDate || filters.endDate) {
+      const dateConditions: any[] = [];
+
+      // 1. Linhas cadastradas na data (createdAt)
+      const createdAtCondition: any = {};
+      if (filters.startDate) {
+        const startDate = new Date(filters.startDate);
+        startDate.setHours(0, 0, 0, 0);
+        createdAtCondition.createdAt = { gte: startDate };
+      }
+      if (filters.endDate) {
+        const endDate = new Date(filters.endDate);
+        endDate.setHours(23, 59, 59, 999);
+        if (createdAtCondition.createdAt) {
+          createdAtCondition.createdAt.lte = endDate;
+        } else {
+          createdAtCondition.createdAt = { lte: endDate };
+        }
+      }
+      if (Object.keys(createdAtCondition).length > 0) {
+        dateConditions.push(createdAtCondition);
+      }
+
+      // 2. Linhas blindadas (banidas) na data (updatedAt quando lineStatus = 'ban')
+      const bannedCondition: any = {
+        lineStatus: 'ban',
+      };
+      if (filters.startDate) {
+        const startDate = new Date(filters.startDate);
+        startDate.setHours(0, 0, 0, 0);
+        bannedCondition.updatedAt = { gte: startDate };
+      }
+      if (filters.endDate) {
+        const endDate = new Date(filters.endDate);
+        endDate.setHours(23, 59, 59, 999);
+        if (bannedCondition.updatedAt) {
+          bannedCondition.updatedAt.lte = endDate;
+        } else {
+          bannedCondition.updatedAt = { lte: endDate };
+        }
+      }
+      if (Object.keys(bannedCondition).length > 1) { // Mais de 1 porque sempre tem lineStatus
+        dateConditions.push(bannedCondition);
+      }
+
+      // Se houver condições de data, usar OR
+      if (dateConditions.length > 0) {
+        whereClause.OR = dateConditions;
+      }
+    }
+
     const lines = await this.prisma.linesStock.findMany({
       where: whereClause,
       orderBy: { createdAt: 'desc' },
