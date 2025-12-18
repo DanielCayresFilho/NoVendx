@@ -353,7 +353,7 @@ server {
 ### Após o Deploy:
 - [ ] Testar endpoint `/health`
 - [ ] Testar endpoint `/api/docs` (Swagger)
-- [ ] Testar endpoint `/metrics` (Prometheus)
+- [ ] Verificar logs do sistema
 - [ ] Testar login no frontend
 - [ ] Testar WebSocket (conexão em tempo real)
 - [ ] Verificar logs de erro

@@ -7,7 +7,6 @@ import { MediaService } from '../media/media.service';
 import { ControlPanelService } from '../control-panel/control-panel.service';
 import { BlocklistService } from '../blocklist/blocklist.service';
 import { SystemEventsService, EventType, EventModule, EventSeverity } from '../system-events/system-events.service';
-import { PrometheusService } from '../prometheus/prometheus.service';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -24,7 +23,6 @@ export class WebhooksService {
     private controlPanelService: ControlPanelService,
     private blocklistService: BlocklistService,
     private systemEventsService: SystemEventsService,
-    private prometheusService?: PrometheusService,
   ) {}
 
   async handleEvolutionMessage(data: any) {
@@ -259,11 +257,6 @@ export class WebhooksService {
           return { status: 'queued', message: 'Mensagem adicionada à fila (nenhum operador online)' };
         }
 
-        // Métricas Prometheus
-        if (this.prometheusService && line) {
-          this.prometheusService.incrementMessagesReceived(line.id);
-        }
-        
         // Criar conversa
         const conversation = await this.conversationsService.create({
           contactName: contact.name,

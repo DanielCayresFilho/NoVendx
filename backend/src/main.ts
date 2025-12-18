@@ -75,7 +75,6 @@ async function bootstrap() {
   await app.listen(port);
   console.log(`🚀 Application is running on: http://localhost:${port}`);
   console.log(`📚 Swagger documentation: http://localhost:${port}/api/docs`);
-  console.log(`📊 Prometheus metrics: http://localhost:${port}/metrics`);
 }
 
 bootstrap();

@@ -251,7 +251,7 @@ sudo certbot renew --dry-run
 ### Após o Deploy:
 - [ ] Endpoint `/health` respondendo
 - [ ] Swagger acessível (`/api/docs`)
-- [ ] Métricas acessíveis (`/metrics`)
+- [ ] Logs do sistema verificados
 - [ ] Frontend carregando corretamente
 - [ ] Login funcionando
 - [ ] WebSocket conectando
@@ -293,13 +293,11 @@ docker-compose exec postgres psql -U postgres -d vend
 
 ### Monitoramento:
 ```bash
-# Iniciar Prometheus + Grafana
-cd backend
-docker-compose -f docker-compose-monitoring.yml up -d
+# Ver logs em tempo real
+docker-compose logs -f backend
 
-# Acessar:
-# - Prometheus: http://localhost:9090
-# - Grafana: http://localhost:3001
+# Ou com PM2
+pm2 logs newvend-backend
 ```
 
 ---

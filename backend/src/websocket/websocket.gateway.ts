@@ -26,7 +26,6 @@ import { LineAssignmentService } from '../line-assignment/line-assignment.servic
 import { MessageValidationService } from '../message-validation/message-validation.service';
 import { MessageSendingService } from '../message-sending/message-sending.service';
 import { AppLoggerService } from '../logger/logger.service';
-import { PrometheusService } from '../prometheus/prometheus.service';
 import axios from 'axios';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -72,7 +71,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     private messageValidationService: MessageValidationService,
     private messageSendingService: MessageSendingService,
     private logger: AppLoggerService,
-    private prometheusService: PrometheusService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -1117,21 +1115,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         EventSeverity.INFO,
       );
 
-      // Métricas Prometheus
-      if (this.prometheusService) {
-        const latency = (Date.now() - startTime) / 1000; // em segundos
-        this.prometheusService.incrementMessagesSent(
-          currentLineId,
-          data.messageType || 'text',
-          'success',
-        );
-        this.prometheusService.recordMessageLatency(
-          currentLineId,
-          data.messageType || 'text',
-          latency,
-        );
-      }
-      
       // Emitir mensagem para o usuário (usar mesmo formato que new_message)
       client.emit('message-sent', { message: conversation });
       console.log(`📤 [WebSocket] Emitido message-sent para o cliente`);
@@ -1149,21 +1132,6 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         code: error.code,
         stack: error.stack,
       });
-      
-      // Métricas Prometheus - erro
-      if (this.prometheusService) {
-        const latency = (Date.now() - startTime) / 1000;
-        this.prometheusService.incrementMessagesSent(
-          currentLineId,
-          data.messageType || 'text',
-          'error',
-        );
-        this.prometheusService.incrementErrors(
-          error.response?.status ? 'api_error' : 'network_error',
-          'websocket',
-          'high',
-        );
-      }
       
       // Registrar evento de erro
       await this.systemEventsService.logEvent(

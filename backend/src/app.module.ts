@@ -31,7 +31,6 @@ import { MessageValidationModule } from './message-validation/message-validation
 import { MessageSendingModule } from './message-sending/message-sending.module';
 import { CacheModule } from './cache/cache.module';
 import { ArchivingModule } from './archiving/archiving.module';
-import { PrometheusModule } from './prometheus/prometheus.module';
 
 @Module({
   imports: [
@@ -45,7 +44,6 @@ import { PrometheusModule } from './prometheus/prometheus.module';
     MessageSendingModule,
     CacheModule,
     ArchivingModule,
-    PrometheusModule,
     BullModule.forRoot({
       redis: {
         host: process.env.REDIS_HOST || 'localhost',

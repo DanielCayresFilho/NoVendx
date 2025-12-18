@@ -18,7 +18,6 @@ import { LineAssignmentModule } from '../line-assignment/line-assignment.module'
 import { MessageValidationModule } from '../message-validation/message-validation.module';
 import { MessageSendingModule } from '../message-sending/message-sending.module';
 import { LoggerModule } from '../logger/logger.module';
-import { PrometheusModule } from '../prometheus/prometheus.module';
 
 @Module({
   imports: [
@@ -43,7 +42,6 @@ import { PrometheusModule } from '../prometheus/prometheus.module';
     MessageValidationModule,
     MessageSendingModule,
     LoggerModule,
-    PrometheusModule,
   ],
   providers: [WebsocketGateway, PrismaService],
   exports: [WebsocketGateway],

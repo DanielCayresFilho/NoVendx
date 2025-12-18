@@ -1256,7 +1256,11 @@ export class ReportsService {
    * Estrutura: Nome, E-mail, Segmento, ROLE
    */
   async getUsuariosReport(filters: ReportFilterDto) {
-    const whereClause: any = {};
+    const whereClause: any = {
+      email: {
+        endsWith: '@paschoalotto.com.br',
+      },
+    };
 
     if (filters.segment) {
       whereClause.segment = filters.segment;

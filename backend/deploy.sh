@@ -104,11 +104,7 @@ else
     log_warn "Swagger pode não estar acessível"
 fi
 
-if curl -f http://localhost:3000/metrics > /dev/null 2>&1; then
-    log_info "Métricas estão acessíveis em: http://localhost:3000/metrics"
-else
-    log_warn "Métricas podem não estar acessíveis"
-fi
+# Verificação de métricas removida (Prometheus desabilitado)
 
 # 10. Mostrar status final
 log_info "Deploy concluído com sucesso! 🎉"
@@ -119,7 +115,6 @@ echo ""
 echo "📝 URLs importantes:"
 echo "  - API: http://localhost:3000"
 echo "  - Swagger: http://localhost:3000/api/docs"
-echo "  - Métricas: http://localhost:3000/metrics"
 echo ""
 echo "📋 Para ver logs:"
 echo "  docker-compose logs -f backend"
