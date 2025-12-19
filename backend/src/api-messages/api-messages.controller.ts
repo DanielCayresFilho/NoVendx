@@ -12,9 +12,9 @@ export class ApiMessagesController {
 
   /**
    * Disparo massivo CPC (suporta texto e templates)
+   * API Key removida temporariamente para testes
    */
   @Post('massivocpc')
-  @UseGuards(ApiKeyGuard)
   async sendMassiveCpc(@Body() dto: MassiveCpcDto, @Req() req: any) {
     const ipAddress = req.ip || req.connection?.remoteAddress;
     const userAgent = req.headers['user-agent'];
