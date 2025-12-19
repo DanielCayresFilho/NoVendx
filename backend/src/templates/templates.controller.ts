@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   ParseIntPipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { TemplatesService } from './templates.service';
 import { CreateTemplateDto } from './dto/create-template.dto';
@@ -29,12 +30,25 @@ export class TemplatesController {
 
   @Post()
   @Roles('admin', 'supervisor')
-  create(@Body() createTemplateDto: CreateTemplateDto) {
+  create(@Body() body: any) {
     try {
-      return this.templatesService.create(createTemplateDto);
+      console.log('📥 [Templates] Dados recebidos (raw):', JSON.stringify(body, null, 2));
+      
+      // Remover campos que não devem estar no create
+      const { status, ...createTemplateDto } = body;
+      
+      console.log('📥 [Templates] Dados após limpeza:', JSON.stringify(createTemplateDto, null, 2));
+      
+      return this.templatesService.create(createTemplateDto as CreateTemplateDto);
     } catch (error) {
       console.error('❌ [Templates] Erro ao criar template:', error);
-      throw error;
+      console.error('❌ [Templates] Stack:', error.stack);
+      
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      
+      throw new BadRequestException(`Erro ao criar template: ${error.message}`);
     }
   }
 

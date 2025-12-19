@@ -276,7 +276,7 @@ export default function Templates() {
 
     setIsSaving(true);
     try {
-      const payload = {
+      const payload: any = {
         name: formData.name.trim(),
         segmentId: formData.segmentId ? parseInt(formData.segmentId) : undefined,
         language: formData.language,
@@ -286,9 +286,13 @@ export default function Templates() {
         headerContent: formData.header.trim() || undefined,
         bodyText: formData.body.trim(),
         footerText: formData.footer.trim() || undefined,
-        variables: formData.variables.trim() ? formData.variables.split(',').map(v => v.trim()) : undefined,
-        status: formData.status,
+        variables: formData.variables.trim() ? formData.variables.split(',').map(v => v.trim()).filter(v => v.length > 0) : undefined,
       };
+
+      // Apenas adicionar status no update, não no create
+      if (editingTemplate) {
+        payload.status = formData.status;
+      }
 
       if (editingTemplate) {
         const updated = await templatesService.update(parseInt(editingTemplate.id), payload);
