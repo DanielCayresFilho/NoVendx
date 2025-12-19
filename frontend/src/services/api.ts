@@ -827,6 +827,10 @@ export interface Template {
   headerContent?: string;
   bodyText: string;
   footerText?: string;
+  variables?: string[];  // Array de nomes de variáveis
+  buttons?: any[];  // Array de botões
+  bodyText: string;
+  footerText?: string;
   buttons?: Array<{ type: string; text: string }>;
   variables?: string[];
   createdAt: string;

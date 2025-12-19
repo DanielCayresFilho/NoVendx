@@ -25,7 +25,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useNotificationSound } from "@/hooks/useNotificationSound";
 import { toast } from "@/hooks/use-toast";
-import { conversationsService, tabulationsService, contactsService, Contact, Conversation as APIConversation, Tabulation, getAuthToken } from "@/services/api";
+import { conversationsService, tabulationsService, contactsService, templatesService, Contact, Conversation as APIConversation, Tabulation, Template, getAuthToken } from "@/services/api";
 import { useRealtimeConnection, useRealtimeSubscription } from "@/hooks/useRealtimeConnection";
 import { WS_EVENTS, realtimeSocket } from "@/services/websocket";
 import { format } from "date-fns";
@@ -88,6 +88,12 @@ export default function Atendimento() {
     message: string;
   } | null>(null);
   const [isRecallingContact, setIsRecallingContact] = useState<string | null>(null);
+  
+  // Estado para templates
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
+  const [templateVariables, setTemplateVariables] = useState<Record<string, string>>({});
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
 
   // Subscribe to new messages in real-time
   useRealtimeSubscription(WS_EVENTS.NEW_MESSAGE, (data: any) => {
@@ -482,10 +488,24 @@ export default function Atendimento() {
     }
   }, [selectedConversation, editingContact, editContactName, editContactCpf, editContactContract, editContactIsCPC, user, playSuccessSound, playErrorSound]);
 
+  // Carregar templates
+  const loadTemplates = useCallback(async () => {
+    try {
+      setIsLoadingTemplates(true);
+      const data = await templatesService.list({ segmentId: user?.segmentId });
+      setTemplates(data);
+    } catch (error) {
+      console.error('Error loading templates:', error);
+    } finally {
+      setIsLoadingTemplates(false);
+    }
+  }, [user?.segmentId]);
+
   useEffect(() => {
     loadConversations();
     loadTabulations();
-  }, [loadConversations, loadTabulations]);
+    loadTemplates();
+  }, [loadConversations, loadTabulations, loadTemplates]);
 
   // Detectar desconexão do WebSocket e sugerir atualização
   useEffect(() => {
@@ -625,7 +645,24 @@ export default function Atendimento() {
   }, [handleFileUpload]);
 
   const handleSendMessage = useCallback(async () => {
-    if (!message.trim() || !selectedConversation || isSending) return;
+    if (!selectedConversation || isSending) return;
+    
+    // Se estiver usando template, verificar se todas as variáveis foram preenchidas
+    if (selectedTemplate) {
+      const requiredVars = selectedTemplate.variables || [];
+      const missingVars = requiredVars.filter(v => !templateVariables[v]?.trim());
+      if (missingVars.length > 0) {
+        toast({
+          title: "Variáveis obrigatórias",
+          description: `Preencha: ${missingVars.join(', ')}`,
+          variant: "destructive",
+        });
+        return;
+      }
+    } else if (!message.trim()) {
+      // Se não estiver usando template, mensagem é obrigatória
+      return;
+    }
 
     setIsSending(true);
     const messageText = message.trim();
@@ -635,11 +672,32 @@ export default function Atendimento() {
       // Usar WebSocket para enviar mensagem via WhatsApp (se conectado)
       if (isRealtimeConnected) {
         console.log('[Atendimento] Enviando mensagem via WebSocket...');
-        realtimeSocket.send('send-message', {
-          contactPhone: selectedConversation.contactPhone,
-          message: messageText,
-          messageType: 'text',
-        });
+        
+        if (selectedTemplate) {
+          // Enviar template com variáveis
+          const variables = (selectedTemplate.variables || []).map(v => ({
+            key: v,
+            value: templateVariables[v] || '',
+          }));
+          
+          realtimeSocket.send('send-message', {
+            contactPhone: selectedConversation.contactPhone,
+            templateId: selectedTemplate.id,
+            templateVariables: variables,
+            isNewConversation: !selectedConversation.messages.length,
+          });
+          
+          // Limpar template após envio
+          setSelectedTemplate(null);
+          setTemplateVariables({});
+        } else {
+          // Enviar mensagem normal
+          realtimeSocket.send('send-message', {
+            contactPhone: selectedConversation.contactPhone,
+            message: messageText,
+            messageType: 'text',
+          });
+        }
         
         // A resposta virá via evento 'message-sent' (sucesso) ou 'message-error' (erro)
         // Não mostrar sucesso imediatamente - aguardar confirmação
@@ -677,7 +735,25 @@ export default function Atendimento() {
     } finally {
       setIsSending(false);
     }
-  }, [message, selectedConversation, isSending, user, isRealtimeConnected, playSuccessSound, playErrorSound, loadConversations]);
+  }, [message, selectedConversation, isSending, user, isRealtimeConnected, playSuccessSound, playErrorSound, loadConversations, selectedTemplate, templateVariables]);
+  
+  // Quando selecionar um template, preencher automaticamente o nome do contato
+  useEffect(() => {
+    if (selectedTemplate && selectedConversation) {
+      const vars = selectedTemplate.variables || [];
+      const newVars: Record<string, string> = {};
+      
+      vars.forEach(v => {
+        if (v.toLowerCase() === 'nome' && selectedConversation.contactName) {
+          newVars[v] = selectedConversation.contactName;
+        } else {
+          newVars[v] = templateVariables[v] || '';
+        }
+      });
+      
+      setTemplateVariables(newVars);
+    }
+  }, [selectedTemplate, selectedConversation?.contactName]);
 
   const handleTabulate = useCallback(async (tabulationId: number) => {
     if (!selectedConversation) return;
@@ -1251,46 +1327,141 @@ export default function Atendimento() {
               </ScrollArea>
 
               {/* Message Input */}
-              <div className="p-4 border-t border-border/50">
-                <div className="flex gap-2">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileSelect}
-                    accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx"
-                    className="hidden"
-                    id="file-upload-input"
-                    disabled={isUploadingFile || !selectedConversation}
-                  />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploadingFile || !selectedConversation}
-                    title="Enviar arquivo"
+              <div className="p-4 border-t border-border/50 space-y-3">
+                {/* Seletor de Template */}
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm whitespace-nowrap">Template:</Label>
+                  <Select
+                    value={selectedTemplate?.id.toString() || ''}
+                    onValueChange={(value) => {
+                      if (value === '') {
+                        setSelectedTemplate(null);
+                        setTemplateVariables({});
+                      } else {
+                        const template = templates.find(t => t.id.toString() === value);
+                        setSelectedTemplate(template || null);
+                        setMessage(''); // Limpar mensagem quando selecionar template
+                      }
+                    }}
+                    disabled={isLoadingTemplates || !selectedConversation}
                   >
-                    {isUploadingFile ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <FileText className="h-4 w-4" />
-                    )}
-                  </Button>
-                  <Input
-                    placeholder="Digite sua mensagem..."
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
-                    className="flex-1"
-                    disabled={isSending}
-                  />
-                  <Button size="icon" onClick={handleSendMessage} disabled={isSending}>
-                    {isSending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Send className="h-4 w-4" />
-                    )}
-                  </Button>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder={isLoadingTemplates ? "Carregando..." : "Selecione um template (opcional)"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Mensagem normal</SelectItem>
+                      {templates.map((template) => (
+                        <SelectItem key={template.id} value={template.id.toString()}>
+                          {template.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedTemplate && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => {
+                        setSelectedTemplate(null);
+                        setTemplateVariables({});
+                      }}
+                      title="Remover template"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
+
+                {/* Campos de Variáveis do Template */}
+                {selectedTemplate && selectedTemplate.variables && selectedTemplate.variables.length > 0 && (
+                  <div className="space-y-2 p-3 bg-muted/50 rounded-lg border">
+                    <Label className="text-sm font-medium">Preencha as variáveis:</Label>
+                    {selectedTemplate.variables.map((varName) => (
+                      <div key={varName} className="space-y-1">
+                        <Label htmlFor={`var-${varName}`} className="text-xs">
+                          {varName}:
+                        </Label>
+                        <Input
+                          id={`var-${varName}`}
+                          placeholder={`Valor para ${varName}`}
+                          value={templateVariables[varName] || ''}
+                          onChange={(e) => setTemplateVariables(prev => ({
+                            ...prev,
+                            [varName]: e.target.value,
+                          }))}
+                          className="h-8"
+                        />
+                      </div>
+                    ))}
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Preview: {selectedTemplate.bodyText.replace(/\{\{(\w+)\}\}/g, (match, varName) => {
+                        return templateVariables[varName] || match;
+                      })}
+                    </p>
+                  </div>
+                )}
+
+                {/* Input de Mensagem (só aparece se não estiver usando template) */}
+                {!selectedTemplate && (
+                  <div className="flex gap-2">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileSelect}
+                      accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx"
+                      className="hidden"
+                      id="file-upload-input"
+                      disabled={isUploadingFile || !selectedConversation}
+                    />
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploadingFile || !selectedConversation}
+                      title="Enviar arquivo"
+                    >
+                      {isUploadingFile ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <FileText className="h-4 w-4" />
+                      )}
+                    </Button>
+                    <Input
+                      placeholder="Digite sua mensagem..."
+                      value={message}
+                      onChange={(e) => setMessage(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
+                      className="flex-1"
+                      disabled={isSending}
+                    />
+                    <Button size="icon" onClick={handleSendMessage} disabled={isSending || !message.trim()}>
+                      {isSending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                )}
+
+                {/* Botão de Enviar Template */}
+                {selectedTemplate && (
+                  <div className="flex justify-end">
+                    <Button onClick={handleSendMessage} disabled={isSending}>
+                      {isSending ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Enviando...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="mr-2 h-4 w-4" />
+                          Enviar Template
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
               </div>
             </>
           ) : (
