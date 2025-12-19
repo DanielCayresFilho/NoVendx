@@ -1,5 +1,5 @@
-import { IsString, IsNotEmpty, IsOptional, IsNumber, IsArray } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { IsString, IsNotEmpty, IsOptional, IsNumber, IsArray, ValidateNested } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 
 export class TemplateButtonDto {
   @IsString()
@@ -50,14 +50,26 @@ export class CreateTemplateDto {
   @IsOptional()
   lineId?: number;  // Mantido para compatibilidade
 
+  @Transform(({ value }) => {
+    if (value === null || value === undefined || value === '') return undefined;
+    return value;
+  })
   @IsString()
   @IsOptional()
   namespace?: string;
 
+  @Transform(({ value }) => {
+    if (value === null || value === undefined || value === '') return undefined;
+    return value;
+  })
   @IsString()
   @IsOptional()
   headerType?: string; // TEXT, IMAGE, VIDEO, DOCUMENT
 
+  @Transform(({ value }) => {
+    if (value === null || value === undefined || value === '') return undefined;
+    return value;
+  })
   @IsString()
   @IsOptional()
   headerContent?: string;
@@ -66,16 +78,35 @@ export class CreateTemplateDto {
   @IsNotEmpty()
   bodyText: string;
 
+  @Transform(({ value }) => {
+    if (value === null || value === undefined || value === '') return undefined;
+    return value;
+  })
   @IsString()
   @IsOptional()
   footerText?: string;
 
-  @IsArray()
+  @Transform(({ value }) => {
+    if (value === null || value === undefined || value === '') return undefined;
+    if (Array.isArray(value) && value.length === 0) return undefined;
+    if (!Array.isArray(value)) return undefined;
+    return value;
+  })
   @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TemplateButtonDto)
   buttons?: TemplateButtonDto[];
 
-  @IsArray()
+  @Transform(({ value }) => {
+    if (value === null || value === undefined || value === '') return undefined;
+    if (Array.isArray(value) && value.length === 0) return undefined;
+    if (!Array.isArray(value)) return undefined;
+    return value;
+  })
   @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   variables?: string[];
 }
 

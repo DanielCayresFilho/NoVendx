@@ -30,7 +30,12 @@ export class TemplatesController {
   @Post()
   @Roles('admin', 'supervisor')
   create(@Body() createTemplateDto: CreateTemplateDto) {
-    return this.templatesService.create(createTemplateDto);
+    try {
+      return this.templatesService.create(createTemplateDto);
+    } catch (error) {
+      console.error('❌ [Templates] Erro ao criar template:', error);
+      throw error;
+    }
   }
 
   @Get()

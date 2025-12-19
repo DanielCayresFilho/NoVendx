@@ -10,38 +10,50 @@ export class TemplatesService {
   constructor(private prisma: PrismaService) {}
 
   async create(createTemplateDto: CreateTemplateDto) {
-    // Se um segmento foi fornecido, verificar se existe
-    if (createTemplateDto.segmentId) {
-      const segment = await this.prisma.segment.findUnique({
-        where: { id: createTemplateDto.segmentId },
-      });
+    try {
+      // Se um segmento foi fornecido, verificar se existe
+      if (createTemplateDto.segmentId) {
+        const segment = await this.prisma.segment.findUnique({
+          where: { id: createTemplateDto.segmentId },
+        });
 
-      if (!segment) {
-        throw new NotFoundException(`Segmento com ID ${createTemplateDto.segmentId} não encontrado`);
+        if (!segment) {
+          throw new NotFoundException(`Segmento com ID ${createTemplateDto.segmentId} não encontrado`);
+        }
       }
+
+      // Serializar arrays para JSON (tratar arrays vazios como null)
+      const buttons = createTemplateDto.buttons && createTemplateDto.buttons.length > 0 
+        ? JSON.stringify(createTemplateDto.buttons) 
+        : null;
+      const variables = createTemplateDto.variables && createTemplateDto.variables.length > 0
+        ? JSON.stringify(createTemplateDto.variables)
+        : null;
+
+      return this.prisma.template.create({
+        data: {
+          name: createTemplateDto.name,
+          language: createTemplateDto.language || 'pt_BR',
+          category: createTemplateDto.category || 'MARKETING',
+          segmentId: createTemplateDto.segmentId || null,  // null = global
+          lineId: createTemplateDto.lineId || null,  // Mantido para compatibilidade
+          namespace: createTemplateDto.namespace || null,
+          headerType: createTemplateDto.headerType || null,
+          headerContent: createTemplateDto.headerContent || null,
+          bodyText: createTemplateDto.bodyText,
+          footerText: createTemplateDto.footerText || null,
+          buttons,
+          variables,
+          status: 'APPROVED',  // Templates internos já vêm aprovados
+        },
+      });
+    } catch (error) {
+      console.error('❌ [TemplatesService] Erro ao criar template:', error);
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(`Erro ao criar template: ${error.message}`);
     }
-
-    // Serializar arrays para JSON
-    const buttons = createTemplateDto.buttons ? JSON.stringify(createTemplateDto.buttons) : null;
-    const variables = createTemplateDto.variables ? JSON.stringify(createTemplateDto.variables) : null;
-
-    return this.prisma.template.create({
-      data: {
-        name: createTemplateDto.name,
-        language: createTemplateDto.language || 'pt_BR',
-        category: createTemplateDto.category || 'MARKETING',
-        segmentId: createTemplateDto.segmentId || null,  // null = global
-        lineId: createTemplateDto.lineId || null,  // Mantido para compatibilidade
-        namespace: createTemplateDto.namespace,
-        headerType: createTemplateDto.headerType,
-        headerContent: createTemplateDto.headerContent,
-        bodyText: createTemplateDto.bodyText,
-        footerText: createTemplateDto.footerText,
-        buttons,
-        variables,
-        status: 'APPROVED',  // Templates internos já vêm aprovados
-      },
-    });
   }
 
   async findAll(filters?: any) {

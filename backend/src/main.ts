@@ -1,6 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, BadRequestException } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import compression from 'compression';
 
@@ -22,8 +22,24 @@ async function bootstrap() {
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
-      forbidNonWhitelisted: true,
+      forbidNonWhitelisted: {
+        value: true,
+        exceptionFactory: (errors) => {
+          const messages = errors.map(error => {
+            const constraints = Object.values(error.constraints || {});
+            return `${error.property}: ${constraints.join(', ')}`;
+          });
+          return new BadRequestException({
+            statusCode: 400,
+            message: 'Erro de validação',
+            errors: messages,
+          });
+        },
+      },
       transform: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
     }),
   );
 
