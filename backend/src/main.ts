@@ -22,23 +22,21 @@ async function bootstrap() {
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
-      forbidNonWhitelisted: {
-        value: true,
-        exceptionFactory: (errors) => {
-          const messages = errors.map(error => {
-            const constraints = Object.values(error.constraints || {});
-            return `${error.property}: ${constraints.join(', ')}`;
-          });
-          return new BadRequestException({
-            statusCode: 400,
-            message: 'Erro de validação',
-            errors: messages,
-          });
-        },
-      },
+      forbidNonWhitelisted: true,
       transform: true,
       transformOptions: {
         enableImplicitConversion: true,
+      },
+      exceptionFactory: (errors) => {
+        const messages = errors.map(error => {
+          const constraints = Object.values(error.constraints || {});
+          return `${error.property}: ${constraints.join(', ')}`;
+        });
+        return new BadRequestException({
+          statusCode: 400,
+          message: 'Erro de validação',
+          errors: messages,
+        });
       },
     }),
   );
