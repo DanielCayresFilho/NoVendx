@@ -986,9 +986,9 @@ export default function Atendimento() {
                     <div className="space-y-2">
                       <Label htmlFor="template">Template (opcional)</Label>
                       <Select
-                        value={selectedTemplate?.id.toString() || ''}
+                        value={selectedTemplate?.id.toString() || undefined}
                         onValueChange={(value) => {
-                          if (value === '') {
+                          if (value === 'none') {
                             setSelectedTemplate(null);
                             setTemplateVariables({});
                             setNewContactMessage('');
@@ -1004,7 +1004,7 @@ export default function Atendimento() {
                           <SelectValue placeholder={isLoadingTemplates ? "Carregando..." : "Selecione um template (opcional)"} />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">Mensagem normal</SelectItem>
+                          <SelectItem value="none">Mensagem normal</SelectItem>
                           {templates.map((template) => (
                             <SelectItem key={template.id} value={template.id.toString()}>
                               {template.name}
