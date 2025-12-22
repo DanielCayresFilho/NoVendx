@@ -3,11 +3,15 @@ import { PrismaService } from '../prisma.service';
 import { CreateTemplateDto } from './dto/create-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
 import { SendTemplateDto, SendTemplateMassiveDto, TemplateVariableDto } from './dto/send-template.dto';
+import { PhoneValidationService } from '../phone-validation/phone-validation.service';
 import axios from 'axios';
 
 @Injectable()
 export class TemplatesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private phoneValidationService: PhoneValidationService,
+  ) {}
 
   async create(createTemplateDto: CreateTemplateDto) {
     try {
@@ -308,6 +312,10 @@ export class TemplatesService {
   async sendTemplate(dto: SendTemplateDto) {
     const template = await this.findOne(dto.templateId);
     
+    // Normalizar telefone (remover espaços, hífens, adicionar 55 se necessário)
+    const normalizedPhone = this.phoneValidationService.cleanPhone(dto.phone);
+    dto.phone = normalizedPhone;
+    
     // Usar lineId do DTO ou do template
     const lineId = dto.lineId || template.lineId;
     
@@ -401,7 +409,7 @@ export class TemplatesService {
     variables: TemplateVariableDto[],
   ): Promise<{ success: boolean; messageId?: string; error?: string }> {
     try {
-      const cleanPhone = phone.replace(/\D/g, '');
+      const cleanPhone = this.phoneValidationService.cleanPhone(phone);
 
       // Montar componentes com variáveis
       const components: any[] = [];
@@ -491,7 +499,7 @@ export class TemplatesService {
   ): Promise<{ success: boolean; messageId?: string; error?: string }> {
     try {
       const instanceName = `line_${line.phone.replace(/\D/g, '')}`;
-      const cleanPhone = phone.replace(/\D/g, '');
+      const cleanPhone = this.phoneValidationService.cleanPhone(phone);
 
       // Substituir variáveis no texto
       let messageText = template.bodyText;

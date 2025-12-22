@@ -99,13 +99,29 @@ export class PhoneValidationService {
   }
 
   /**
-   * Limpa e formata número de telefone
+   * Limpa e normaliza número de telefone
+   * Remove espaços, hífens e outros caracteres não numéricos
+   * Adiciona DDI 55 se não tiver (para números brasileiros)
    * @param phone Número de telefone
-   * @returns Número limpo (apenas dígitos)
+   * @returns Número normalizado (apenas dígitos, com DDI 55 se aplicável)
    */
   cleanPhone(phone: string): string {
     if (!phone) return '';
-    return phone.replace(/\D/g, '');
+    
+    // Remover todos os caracteres não numéricos (espaços, hífens, parênteses, etc)
+    let cleanPhone = phone.replace(/\D/g, '');
+    
+    // Se o número estiver vazio após limpeza, retornar vazio
+    if (!cleanPhone) return '';
+    
+    // Se já começar com 55, retornar como está
+    if (cleanPhone.startsWith('55')) {
+      return cleanPhone;
+    }
+    
+    // Se não começar com 55, adicionar o DDI 55 do Brasil
+    // Isso assume que números sem DDI são brasileiros
+    return '55' + cleanPhone;
   }
 
   /**

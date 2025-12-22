@@ -11,6 +11,7 @@ import { ConversationsModule } from '../conversations/conversations.module';
 import { RateLimitingModule } from '../rate-limiting/rate-limiting.module';
 import { LineReputationModule } from '../line-reputation/line-reputation.module';
 import { LoggerModule } from '../logger/logger.module';
+import { PhoneValidationModule } from '../phone-validation/phone-validation.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { LoggerModule } from '../logger/logger.module';
     RateLimitingModule,
     LineReputationModule,
     LoggerModule,
+    PhoneValidationModule,
   ],
   controllers: [CampaignsController],
   providers: [CampaignsService, CampaignsProcessor, PrismaService],

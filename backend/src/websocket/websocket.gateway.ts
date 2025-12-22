@@ -646,6 +646,10 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         return { error: repescagemCheck.reason };
       }
 
+      // Normalizar telefone (remover espaços, hífens, adicionar 55 se necessário)
+      const normalizedPhone = this.phoneValidationService.cleanPhone(data.contactPhone);
+      data.contactPhone = normalizedPhone;
+      
       // Validação de número: Verificar se o número é válido antes de enviar
       const phoneValidation = this.phoneValidationService.isValidFormat(data.contactPhone);
       if (!phoneValidation) {

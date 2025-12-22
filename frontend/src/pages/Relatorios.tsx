@@ -29,6 +29,7 @@ const reportTypes = [
   { value: "dados_transacionados", label: "Dados Transacionados" },
   { value: "detalhado_conversas", label: "Detalhado Conversas" },
   { value: "linhas", label: "Linhas" },
+  { value: "mensagens_por_linha", label: "Mensagens por Linha" },
   { value: "resumo_atendimentos", label: "Resumo Atendimentos" },
   { value: "usuarios", label: "Usuários" },
   { value: "hiper_personalizado", label: "Hiper Personalizado" },

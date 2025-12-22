@@ -954,6 +954,7 @@ const reportEndpoints: Record<string, string> = {
   'dados_transacionados': 'dados-transacionados',
   'detalhado_conversas': 'detalhado-conversas',
   'linhas': 'linhas',
+  'mensagens_por_linha': 'mensagens-por-linha',
   'resumo_atendimentos': 'resumo-atendimentos',
   'usuarios': 'usuarios',
   'hiper_personalizado': 'hiper-personalizado',

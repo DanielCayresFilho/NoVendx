@@ -6,6 +6,7 @@ import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { CampaignContact } from './dto/upload-campaign.dto';
 import { ContactsService } from '../contacts/contacts.service';
 import { UsersService } from '../users/users.service';
+import { PhoneValidationService } from '../phone-validation/phone-validation.service';
 
 @Injectable()
 export class CampaignsService {
@@ -14,6 +15,7 @@ export class CampaignsService {
     private prisma: PrismaService,
     private contactsService: ContactsService,
     private usersService: UsersService,
+    private phoneValidationService: PhoneValidationService,
   ) {}
 
   async create(createCampaignDto: CreateCampaignDto) {
@@ -125,6 +127,16 @@ export class CampaignsService {
     
     for (let i = 0; i < contacts.length; i++) {
       const contact = contacts[i];
+      
+      // Normalizar telefone (remover espaços, hífens, adicionar 55 se necessário)
+      const normalizedPhone = this.phoneValidationService.cleanPhone(contact.phone);
+      
+      // Criar contato normalizado
+      const normalizedContact: CampaignContact = {
+        ...contact,
+        phone: normalizedPhone,
+      };
+      
       const lineIndex = i % availableLines.length; // Round-robin entre linhas
       const lineId = availableLines[lineIndex];
       const roundIndex = Math.floor(i / availableLines.length);
@@ -132,7 +144,7 @@ export class CampaignsService {
       if (!contactsByRound[roundIndex]) {
         contactsByRound[roundIndex] = [];
       }
-      contactsByRound[roundIndex].push({ contact, lineId });
+      contactsByRound[roundIndex].push({ contact: normalizedContact, lineId });
     }
 
     // Encontrar operador para cada linha

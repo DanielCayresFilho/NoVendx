@@ -7,6 +7,7 @@ import { ConversationsService } from '../conversations/conversations.service';
 import { RateLimitingService } from '../rate-limiting/rate-limiting.service';
 import { LineReputationService } from '../line-reputation/line-reputation.service';
 import { AppLoggerService } from '../logger/logger.service';
+import { PhoneValidationService } from '../phone-validation/phone-validation.service';
 import axios from 'axios';
 
 interface TemplateVariable {
@@ -24,6 +25,7 @@ export class CampaignsProcessor {
     private rateLimitingService: RateLimitingService,
     private lineReputationService: LineReputationService,
     private logger: AppLoggerService,
+    private phoneValidationService: PhoneValidationService,
   ) {}
 
   @Process('send-campaign-message')
@@ -94,7 +96,8 @@ export class CampaignsProcessor {
       }
 
       const instanceName = `line_${line.phone.replace(/\D/g, '')}`;
-      const cleanPhone = contactPhone.replace(/\D/g, '');
+      // Normalizar telefone (remover espaços, hífens, adicionar 55 se necessário)
+      const cleanPhone = this.phoneValidationService.cleanPhone(contactPhone);
 
       let retries = 0;
       let sent = false;
