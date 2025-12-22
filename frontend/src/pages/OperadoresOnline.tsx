@@ -11,9 +11,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { usersService, segmentsService, type Segment } from "@/services/api";
-import { Loader2, Users, RefreshCw, Wifi } from "lucide-react";
+import { usersService, segmentsService, linesService, type Segment } from "@/services/api";
+import { Loader2, Users, RefreshCw, Wifi, Link2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface OperatorLine {
   id: number;
@@ -41,6 +47,11 @@ export default function OperadoresOnline() {
   const [selectedSegment, setSelectedSegment] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [selectedOperator, setSelectedOperator] = useState<OnlineOperator | null>(null);
+  const [availableLines, setAvailableLines] = useState<Array<{ id: number; phone: string; segmentName: string | null; operatorsCount: number }>>([]);
+  const [isLoadingLines, setIsLoadingLines] = useState(false);
+  const [isAssigning, setIsAssigning] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -82,6 +93,46 @@ export default function OperadoresOnline() {
       return <Badge className="bg-success text-success-foreground">Ativa</Badge>;
     }
     return <Badge className="bg-destructive text-destructive-foreground">Banida</Badge>;
+  };
+
+  const handleOpenAssignDialog = async (operator: OnlineOperator) => {
+    setSelectedOperator(operator);
+    setAssignDialogOpen(true);
+    setIsLoadingLines(true);
+    try {
+      const lines = await linesService.getAvailableForOperator(operator.id);
+      setAvailableLines(lines);
+    } catch (error) {
+      toast({
+        title: "Erro ao carregar linhas",
+        description: error instanceof Error ? error.message : "Não foi possível carregar linhas disponíveis",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingLines(false);
+    }
+  };
+
+  const handleAssignLine = async (lineId: number) => {
+    if (!selectedOperator) return;
+    setIsAssigning(true);
+    try {
+      await linesService.assignOperator(lineId, selectedOperator.id);
+      toast({
+        title: "Linha atribuída",
+        description: `Linha atribuída ao operador ${selectedOperator.name} com sucesso`,
+      });
+      setAssignDialogOpen(false);
+      loadData(); // Recarregar dados
+    } catch (error) {
+      toast({
+        title: "Erro ao atribuir linha",
+        description: error instanceof Error ? error.message : "Não foi possível atribuir a linha",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAssigning(false);
+    }
   };
 
   const filteredOperators = operators;
@@ -237,6 +288,19 @@ export default function OperadoresOnline() {
                         </p>
                       )}
                     </div>
+
+                    {/* Assign Button */}
+                    <div className="mt-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleOpenAssignDialog(operator)}
+                        className="w-full"
+                      >
+                        <Link2 className="mr-2 h-4 w-4" />
+                        Atribuir Linha Rápida
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </GlassCard>
@@ -244,6 +308,49 @@ export default function OperadoresOnline() {
           </div>
         )}
       </div>
+
+      {/* Assign Line Dialog */}
+      <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Atribuir Linha para {selectedOperator?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            {isLoadingLines ? (
+              <div className="flex flex-col items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
+                <p className="text-sm text-muted-foreground">Carregando linhas disponíveis...</p>
+              </div>
+            ) : availableLines.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <p className="text-sm text-muted-foreground">Nenhuma linha disponível no momento</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                {availableLines.map((line) => (
+                  <div
+                    key={line.id}
+                    className="flex items-center justify-between p-3 border border-border rounded-lg hover:bg-accent cursor-pointer"
+                    onClick={() => !isAssigning && handleAssignLine(line.id)}
+                  >
+                    <div className="flex-1">
+                      <div className="font-mono text-sm font-medium">{line.phone}</div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {line.segmentName} • {line.operatorsCount} operador(es)
+                      </div>
+                    </div>
+                    {isAssigning && (
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 }

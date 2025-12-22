@@ -250,18 +250,27 @@ export class LinesService {
 
   async findAll(filters?: any) {
     // Remover campos inválidos que não existem no schema
-    const { search, ...validFilters } = filters || {};
+    const { search, lineStatus, ...validFilters } = filters || {};
+    
+    // Construir where clause
+    const where: any = { ...validFilters };
+    
+    // Aplicar filtro de status se fornecido
+    if (lineStatus) {
+      where.lineStatus = lineStatus;
+    }
     
     // Se houver busca por texto, aplicar filtros
-    const where = search 
-      ? {
-          ...validFilters,
-          OR: [
-            { phone: { contains: search } },
-            { evolutionName: { contains: search } },
-          ],
-        }
-      : validFilters;
+    if (search) {
+      where.OR = [
+        { phone: { contains: search, mode: 'insensitive' } },
+        { evolutionName: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    // Buscar segmentos para mapeamento
+    const segments = await this.prisma.segment.findMany();
+    const segmentMap = new Map(segments.map(s => [s.id, s]));
 
     const lines = await this.prisma.linesStock.findMany({
       where,
@@ -283,9 +292,10 @@ export class LinesService {
       },
     });
 
-    // Mapear para incluir operadores vinculados
+    // Mapear para incluir operadores vinculados e nome do segmento
     return lines.map(line => ({
       ...line,
+      segmentName: line.segment ? segmentMap.get(line.segment)?.name : null,
       operators: line.operators.map(lo => ({
         id: lo.user.id,
         name: lo.user.name,
@@ -583,11 +593,11 @@ export class LinesService {
           continue; // Operador já tem outra linha ou não existe
         }
 
-        // Buscar uma nova linha ativa do mesmo segmento (aceita linhas com 1 operador)
+        // 1. Primeiro, tentar buscar linha do mesmo segmento do operador
         let availableLines = await this.prisma.linesStock.findMany({
           where: {
             lineStatus: 'active',
-            segment: line.segment,
+            segment: operator.segment || line.segment,
           },
           include: {
             operators: {
@@ -602,7 +612,7 @@ export class LinesService {
         availableLines = await this.controlPanelService.filterLinesByActiveEvolutions(availableLines, operator.segment || undefined);
 
         // Aceitar linhas com menos de 2 operadores e que não tenham operadores de outro segmento
-        const availableLine = availableLines.find(l => {
+        let availableLine = availableLines.find(l => {
           if (l.operators.length >= 2) return false;
           
           // Verificar se todos os operadores são do mesmo segmento do operador atual
@@ -613,6 +623,29 @@ export class LinesService {
           
           return true;
         });
+
+        // 2. Se não encontrou linha do segmento, buscar linha sem segmento (padrão)
+        if (!availableLine) {
+          const defaultLines = await this.prisma.linesStock.findMany({
+            where: {
+              lineStatus: 'active',
+              segment: null, // Linhas sem segmento (padrão)
+            },
+            include: {
+              operators: {
+                include: {
+                  user: true,
+                },
+              },
+            },
+          });
+
+          // Filtrar por evolutions ativas
+          const filteredDefaultLines = await this.controlPanelService.filterLinesByActiveEvolutions(defaultLines, operator.segment || undefined);
+
+          // Linhas sem segmento podem aceitar qualquer operador se tiverem menos de 2
+          availableLine = filteredDefaultLines.find(l => l.operators.length < 2);
+        }
 
         if (availableLine) {
           // Vincular nova linha ao operador usando a tabela LineOperator
@@ -670,17 +703,8 @@ export class LinesService {
             console.error(`❌ [handleBannedLine] Erro ao notificar operador:`, error);
           }
           
-          // Adicionar operador em fila de espera
-          try {
-            await (this.prisma as any).operatorWaitingQueue.upsert({
-              where: { userId: operatorId },
-              update: { createdAt: new Date() },
-              create: { userId: operatorId, createdAt: new Date() },
-            });
-            console.log(`📋 [handleBannedLine] Operador ${operator?.name || operatorId} adicionado à fila de espera`);
-          } catch (error) {
-            console.warn(`⚠️ [handleBannedLine] Não foi possível adicionar operador à fila de espera:`, error.message);
-          }
+          // Log apenas - fila de espera não implementada no schema ainda
+          console.log(`📋 [handleBannedLine] Operador ${operator?.name || operatorId} precisa de nova linha, mas nenhuma disponível no momento`);
         }
       }
     } else if (line.linkedTo) {
@@ -724,6 +748,64 @@ export class LinesService {
         linkedTo: null,
       },
     });
+  }
+
+  async getAvailableLinesForOperator(operatorId: number) {
+    // Buscar operador
+    const operator = await this.prisma.user.findUnique({
+      where: { id: operatorId },
+      select: { segment: true },
+    });
+
+    if (!operator) {
+      throw new NotFoundException('Operador não encontrado');
+    }
+
+    // Buscar linhas disponíveis do segmento do operador
+    let availableLines = await this.prisma.linesStock.findMany({
+      where: {
+        lineStatus: 'active',
+        segment: operator.segment,
+      },
+      include: {
+        operators: true,
+      },
+    });
+
+    // Filtrar linhas com menos de 2 operadores
+    availableLines = availableLines.filter(l => l.operators.length < 2);
+
+    // Se não encontrou linhas do segmento, buscar linhas sem segmento (padrão)
+    if (availableLines.length === 0) {
+      const defaultLines = await this.prisma.linesStock.findMany({
+        where: {
+          lineStatus: 'active',
+          segment: null,
+        },
+        include: {
+          operators: true,
+        },
+      });
+      availableLines = defaultLines.filter(l => l.operators.length < 2);
+    }
+
+    // Filtrar por evolutions ativas
+    const filteredLines = await this.controlPanelService.filterLinesByActiveEvolutions(
+      availableLines,
+      operator.segment || undefined
+    );
+
+    // Buscar segmentos para mapear nomes
+    const segments = await this.prisma.segment.findMany();
+    const segmentMap = new Map(segments.map(s => [s.id, s]));
+
+    return filteredLines.map(line => ({
+      id: line.id,
+      phone: line.phone,
+      segment: line.segment,
+      segmentName: line.segment ? segmentMap.get(line.segment)?.name : 'Sem segmento',
+      operatorsCount: line.operators.length,
+    }));
   }
 
   async getEvolutions() {

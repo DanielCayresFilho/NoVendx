@@ -680,6 +680,22 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         return { error: 'Limite de mensagens atingido' };
       }
 
+      // Verificar se o segmento permite mensagem livre
+      // Se não permitir e não for template, bloquear envio
+      if (user.segment && !data.templateId) {
+        const segment = await this.prisma.segment.findUnique({
+          where: { id: user.segment },
+        });
+
+        // Verificar allowsFreeMessage (campo pode não existir ainda se Prisma não foi regenerado)
+        const allowsFreeMessage = (segment as any)?.allowsFreeMessage;
+        if (segment && allowsFreeMessage === false) {
+          return { 
+            error: 'Este segmento não permite mensagens livres. Use apenas templates para enviar mensagens no 1x1.' 
+          };
+        }
+      }
+
       // Humanização: Simular comportamento humano antes de enviar
       const messageLength = data.message?.length || 0;
       const isResponse = !data.isNewConversation; // Se não é nova conversa, é resposta

@@ -32,6 +32,7 @@ interface Line {
   type: 'official' | 'evolution';
   evolutionName?: string;
   segment?: number;
+  segmentName?: string | null;
   operators?: Array<{
     id: number;
     name: string;
@@ -41,12 +42,14 @@ interface Line {
 
 export default function Linhas() {
   const [lines, setLines] = useState<Line[]>([]);
+  const [allLines, setAllLines] = useState<Line[]>([]); // Todas as linhas (sem filtro)
   const [segments, setSegments] = useState<Segment[]>([]);
   const [evolutions, setEvolutions] = useState<Evolution[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingLine, setEditingLine] = useState<Line | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [formData, setFormData] = useState({
     phone: '',
     segment: '',
@@ -64,26 +67,40 @@ export default function Linhas() {
 
   useEffect(() => {
     loadData();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter]);
 
   const loadData = async () => {
     setIsLoading(true);
     try {
+      const params: any = {};
+      if (statusFilter !== 'all') {
+        params.lineStatus = statusFilter;
+      }
       const [linesData, segmentsData, evolutionsData] = await Promise.all([
-        linesService.list(),
+        linesService.list(params),
         segmentsService.list(),
         evolutionService.list()
       ]);
 
-      setLines(linesData.map((l: ApiLine) => ({
+      const mappedLines = linesData.map((l: ApiLine) => ({
         id: String(l.id),
         phone: l.phone,
         status: l.lineStatus === 'active' ? 'active' : 'banned',
         type: l.oficial ? 'official' : 'evolution',
         evolutionName: l.evolutionName,
         segment: l.segment ?? undefined,
+        segmentName: l.segmentName ?? null,
         operators: l.operators || []
-      })));
+      }));
+      setAllLines(mappedLines);
+      
+      // Aplicar filtro local se necessário
+      let filtered = mappedLines;
+      if (statusFilter !== 'all') {
+        filtered = filtered.filter(l => l.status === statusFilter);
+      }
+      setLines(filtered);
 
       setSegments(segmentsData);
       setEvolutions(evolutionsData);
@@ -99,6 +116,7 @@ export default function Linhas() {
     }
   };
 
+
   const columns: Column<Line>[] = [
     { key: "phone", label: "Telefone" },
     {
@@ -108,6 +126,15 @@ export default function Linhas() {
         <Badge className={line.status === 'active' ? "bg-success" : "bg-destructive"}>
           {line.status === 'active' ? "Ativa" : "Banida"}
         </Badge>
+      )
+    },
+    {
+      key: "segmentName",
+      label: "Segmento",
+      render: (line) => (
+        <span className="text-sm">
+          {line.segmentName || <span className="text-muted-foreground">Sem segmento</span>}
+        </span>
       )
     },
     // OCULTO: Coluna Tipo - Funcionalidade Cloud API oculta por enquanto
@@ -183,7 +210,14 @@ export default function Linhas() {
   const handleDelete = async (line: Line) => {
     try {
       await linesService.delete(Number(line.id));
-      setLines(lines.filter(l => l.id !== line.id));
+      const newAllLines = allLines.filter(l => l.id !== line.id);
+      setAllLines(newAllLines);
+      // Aplicar filtro se necessário
+      let filtered = newAllLines;
+      if (statusFilter !== 'all') {
+        filtered = filtered.filter(l => l.status === statusFilter);
+      }
+      setLines(filtered);
       playWarningSound();
       toast({
         title: "Linha removida",
@@ -474,6 +508,21 @@ export default function Linhas() {
   return (
     <MainLayout>
       <div className="animate-fade-in">
+        <div className="mb-4 flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Label htmlFor="statusFilter">Filtrar por Status:</Label>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Todos os status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="active">Ativas</SelectItem>
+                <SelectItem value="banned">Banidas</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
         <CrudTable
           title="Linhas WhatsApp"
           subtitle="Gerenciar linhas de atendimento"

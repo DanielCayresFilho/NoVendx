@@ -72,6 +72,12 @@ export class LinesController {
     return this.linesService.getAvailableLines(+segment);
   }
 
+  @Get('available-for-operator/:operatorId')
+  @Roles(Role.admin)
+  async getAvailableForOperator(@Param('operatorId') operatorId: string) {
+    return this.linesService.getAvailableLinesForOperator(+operatorId);
+  }
+
   @Get('activators-productivity')
   @Roles(Role.admin, Role.supervisor)
   getActivatorsProductivity() {
@@ -112,5 +118,12 @@ export class LinesController {
   @Roles(Role.admin)
   remove(@Param('id') id: string) {
     return this.linesService.remove(+id);
+  }
+
+  @Post(':id/assign-operator/:operatorId')
+  @Roles(Role.admin)
+  async assignOperator(@Param('id') lineId: string, @Param('operatorId') operatorId: string) {
+    await this.linesService.assignOperatorToLine(+lineId, +operatorId);
+    return { message: 'Operador atribuído à linha com sucesso' };
   }
 }

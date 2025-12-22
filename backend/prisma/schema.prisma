@@ -63,10 +63,11 @@ model User {
 }
 
 model Segment {
-  id        Int      @id @default(autoincrement())
-  name      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               Int      @id @default(autoincrement())
+  name             String   @unique
+  allowsFreeMessage Boolean @default(true) // Se true, permite mensagens livres no 1x1. Se false, só permite templates.
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   @@index([name])
 }

@@ -179,6 +179,7 @@ export const usersService = {
 export interface Segment {
   id: number;
   name: string;
+  allowsFreeMessage: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -193,17 +194,21 @@ export const segmentsService = {
     return apiRequest<Segment>(`/segments/${id}`);
   },
 
-  create: async (name: string): Promise<Segment> => {
+  create: async (name: string, allowsFreeMessage: boolean = true): Promise<Segment> => {
     return apiRequest<Segment>('/segments', {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, allowsFreeMessage }),
     });
   },
 
-  update: async (id: number, name: string): Promise<Segment> => {
+  update: async (id: number, name: string, allowsFreeMessage?: boolean): Promise<Segment> => {
+    const body: any = { name };
+    if (allowsFreeMessage !== undefined) {
+      body.allowsFreeMessage = allowsFreeMessage;
+    }
     return apiRequest<Segment>(`/segments/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(body),
     });
   },
 
@@ -239,6 +244,7 @@ export interface Line {
   phone: string;
   lineStatus: 'active' | 'ban';
   segment: number | null;
+  segmentName?: string | null;
   linkedTo: number | null;
   evolutionName: string;
   oficial: boolean;
@@ -342,6 +348,20 @@ export const linesService = {
 
   delete: async (id: number): Promise<void> => {
     await apiRequest(`/lines/${id}`, { method: 'DELETE' });
+  },
+
+  assignOperator: async (lineId: number, operatorId: number): Promise<void> => {
+    await apiRequest(`/lines/${lineId}/assign-operator/${operatorId}`, { method: 'POST' });
+  },
+
+  getAvailableForOperator: async (operatorId: number): Promise<Array<{
+    id: number;
+    phone: string;
+    segment: number | null;
+    segmentName: string | null;
+    operatorsCount: number;
+  }>> => {
+    return apiRequest(`/lines/available-for-operator/${operatorId}`);
   },
 };
 

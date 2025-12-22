@@ -4,21 +4,24 @@ import { CrudTable, Column } from "@/components/crud/CrudTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DialogFooter } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 import { segmentsService, Segment as APISegment } from "@/services/api";
 import { Upload, Loader2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 interface Segment {
   id: string;
   name: string;
+  allowsFreeMessage: boolean;
 }
 
 export default function Segmentos() {
   const [segments, setSegments] = useState<Segment[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingSegment, setEditingSegment] = useState<Segment | null>(null);
-  const [formData, setFormData] = useState({ name: '' });
+  const [formData, setFormData] = useState({ name: '', allowsFreeMessage: true });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -27,6 +30,7 @@ export default function Segmentos() {
   const mapApiToLocal = (apiSegment: APISegment): Segment => ({
     id: apiSegment.id.toString(),
     name: apiSegment.name,
+    allowsFreeMessage: apiSegment.allowsFreeMessage ?? true,
   });
 
   const loadSegments = useCallback(async () => {
@@ -50,18 +54,33 @@ export default function Segmentos() {
   }, [loadSegments]);
 
   const columns: Column<Segment>[] = [
-    { key: "name", label: "Nome" }
+    { key: "name", label: "Nome" },
+    { 
+      key: "allowsFreeMessage", 
+      label: "Mensagem Livre",
+      render: (segment) => (
+        segment.allowsFreeMessage ? (
+          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+            Sim
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+            Apenas Templates
+          </Badge>
+        )
+      )
+    }
   ];
 
   const handleAdd = () => {
     setEditingSegment(null);
-    setFormData({ name: '' });
+    setFormData({ name: '', allowsFreeMessage: true });
     setIsFormOpen(true);
   };
 
   const handleEdit = (segment: Segment) => {
     setEditingSegment(segment);
-    setFormData({ name: segment.name });
+    setFormData({ name: segment.name, allowsFreeMessage: segment.allowsFreeMessage });
     setIsFormOpen(true);
   };
 
@@ -95,14 +114,14 @@ export default function Segmentos() {
     setIsSaving(true);
     try {
       if (editingSegment) {
-        const updated = await segmentsService.update(parseInt(editingSegment.id), formData.name.trim());
+        const updated = await segmentsService.update(parseInt(editingSegment.id), formData.name.trim(), formData.allowsFreeMessage);
         setSegments(segments.map(s => s.id === editingSegment.id ? mapApiToLocal(updated) : s));
         toast({
           title: "Segmento atualizado",
           description: "Segmento atualizado com sucesso",
         });
       } else {
-        const created = await segmentsService.create(formData.name.trim());
+        const created = await segmentsService.create(formData.name.trim(), formData.allowsFreeMessage);
         setSegments([...segments, mapApiToLocal(created)]);
         toast({
           title: "Segmento criado",
@@ -174,6 +193,21 @@ export default function Segmentos() {
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
         />
+      </div>
+      <div className="flex items-center space-x-2">
+        <Checkbox
+          id="allowsFreeMessage"
+          checked={formData.allowsFreeMessage}
+          onCheckedChange={(checked) => setFormData({ ...formData, allowsFreeMessage: checked === true })}
+        />
+        <Label htmlFor="allowsFreeMessage" className="text-sm font-normal cursor-pointer">
+          Permitir mensagens livres no 1x1
+        </Label>
+      </div>
+      <div className="text-xs text-muted-foreground">
+        {formData.allowsFreeMessage 
+          ? "Operadores deste segmento podem enviar qualquer mensagem no 1x1"
+          : "Operadores deste segmento só podem enviar mensagens através de templates no 1x1"}
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={() => setIsFormOpen(false)} disabled={isSaving}>
