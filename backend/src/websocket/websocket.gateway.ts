@@ -248,57 +248,61 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
             }
           }
           
-          // Se ainda não tem linha, tentar busca mais ampla (qualquer linha ativa)
+          // Se ainda não tem linha, tentar busca mais ampla (linhas sem segmento - segmento padrão)
           if (!availableLine || !user.line) {
-            // Buscar qualquer linha ativa (sem filtro de segmento)
+            // Buscar linhas ativas sem segmento (segmento padrão/null)
             const anyActiveLines = await this.prisma.linesStock.findMany({
               where: {
                 lineStatus: 'active',
+                segment: null, // Apenas linhas sem segmento (segmento padrão)
               },
             });
+            
+            if (anyActiveLines.length === 0) {
+              console.warn(`⚠️ [WebSocket] Não existem linhas padrão (sem segmento) disponíveis para o operador ${user.name} (ID: ${user.id})`);
+            }
             
             // Filtrar por evolutions ativas
             const filteredAnyLines = await this.controlPanelService.filterLinesByActiveEvolutions(anyActiveLines, user.segment);
             const fallbackLine = await this.findAvailableLineForOperator(filteredAnyLines, user.id, user.segment);
+            
+            if (!fallbackLine && anyActiveLines.length > 0) {
+              console.warn(`⚠️ [WebSocket] Linhas padrão (sem segmento) existem, mas nenhuma está disponível (todas já têm 2 operadores ou evoluções inativas) para o operador ${user.name} (ID: ${user.id})`);
+            }
             
             if (fallbackLine) {
               const currentOperatorsCount = await (this.prisma as any).lineOperator.count({
                 where: { lineId: fallbackLine.id },
               });
               
+              // Linha sem segmento (padrão) pode ter até 2 operadores
+              // Se está sem segmento, aceita qualquer operador (é linha padrão/compartilhada)
               if (currentOperatorsCount < 2) {
-                // Verificar se não tem operadores de outro segmento
-                const existingOperators = await (this.prisma as any).lineOperator.findMany({
-                  where: { lineId: fallbackLine.id },
-                  include: { user: true },
-                });
-                
-                const canAssign = existingOperators.length === 0 || 
-                  existingOperators.every((lo: any) => lo.user.segment === user.segment);
-                
-                if (canAssign) {
-                  // Vincular operador à linha usando método com transaction + lock
-                  try {
-                    await this.linesService.assignOperatorToLine(fallbackLine.id, user.id);
-                    
-                    // Atualizar segmento da linha se operador tem segmento
-                    if (user.segment && fallbackLine.segment !== user.segment) {
-                      await this.prisma.linesStock.update({
-                        where: { id: fallbackLine.id },
-                        data: { segment: user.segment },
-                      });
-                    }
-                    
-                    user.line = fallbackLine.id;
-                    
-                    // Notificação removida - operador não precisa saber
-                  } catch (error) {
-                    console.error(`❌ [WebSocket] Erro ao vincular linha ${fallbackLine.id} ao operador ${user.id}:`, error.message);
-                    // Continuar para tentar outra linha
+                // Vincular operador à linha usando método com transaction + lock
+                try {
+                  await this.linesService.assignOperatorToLine(fallbackLine.id, user.id);
+                  
+                  // Atualizar segmento da linha se operador tem segmento
+                  // Isso faz a linha deixar de ser "padrão" e passa a ser do segmento do operador
+                  if (user.segment && fallbackLine.segment !== user.segment) {
+                    await this.prisma.linesStock.update({
+                      where: { id: fallbackLine.id },
+                      data: { segment: user.segment },
+                    });
                   }
+                  
+                  user.line = fallbackLine.id;
+                  
+                  // Notificação removida - operador não precisa saber
+                } catch (error) {
+                  console.error(`❌ [WebSocket] Erro ao vincular linha ${fallbackLine.id} ao operador ${user.id}:`, error.message);
+                  // Continuar para tentar outra linha
                 }
+              }
             }
-          } else {
+            
+            // Verificar se ainda não tem linha após todas as tentativas
+            if (!user.line) {
               console.error(`❌ [WebSocket] Nenhuma linha disponível para o operador ${user.name} após todas as tentativas`);
               // Notificação removida - operador não precisa saber
               // Nota: Fila de espera será implementada futuramente se necessário
