@@ -1287,6 +1287,7 @@ export default function Atendimento() {
                     </div>
                   </DropdownMenuContent>
                 </DropdownMenu>
+                </div>
               </div>
 
               {/* Modal de Edição de Contato */}
