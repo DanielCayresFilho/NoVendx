@@ -680,9 +680,9 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         return { error: 'Limite de mensagens atingido' };
       }
 
-      // Verificar se o segmento permite mensagem livre
-      // Se não permitir e não for template, bloquear envio
-      if (user.segment && !data.templateId) {
+      // Verificar se o segmento permite mensagem livre (APENAS para novas conversas 1x1)
+      // Se não permitir e não for template, bloquear envio apenas em novas conversas
+      if (data.isNewConversation && user.segment && !data.templateId) {
         const segment = await this.prisma.segment.findUnique({
           where: { id: user.segment },
         });
@@ -975,6 +975,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
           }
           
           try {
+            console.log(`📤 [WebSocket] Enviando mídia para ${data.contactPhone.replace(/\D/g, '')} via linha ${line.phone}`);
             apiResponse = await axios.post(
               `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
               payload,
@@ -983,6 +984,10 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                 timeout: 30000, // 30 segundos
               }
             );
+            console.log(`✅ [WebSocket] Resposta da Evolution API (mídia URL):`, {
+              status: apiResponse?.status,
+              data: apiResponse?.data,
+            });
             
           } catch (urlError: any) {
             // Tentativa 2: Base64 puro
@@ -998,6 +1003,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
             }
             
             try {
+              console.log(`📤 [WebSocket] Tentando enviar mídia via base64...`);
               apiResponse = await axios.post(
                 `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
                 payload,
@@ -1006,6 +1012,10 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                   timeout: 30000, // 30 segundos
                 }
               );
+              console.log(`✅ [WebSocket] Resposta da Evolution API (mídia base64):`, {
+                status: apiResponse?.status,
+                data: apiResponse?.data,
+              });
               
             } catch (base64Error: any) {
               // Tentativa 3: Campo "media"
@@ -1020,6 +1030,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                 payload.caption = data.message;
               }
               
+              console.log(`📤 [WebSocket] Tentando enviar mídia via campo "media"...`);
               apiResponse = await axios.post(
                 `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
                 payload,
@@ -1028,6 +1039,10 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                   timeout: 30000, // 30 segundos
                 }
               );
+              console.log(`✅ [WebSocket] Resposta da Evolution API (mídia campo media):`, {
+                status: apiResponse?.status,
+                data: apiResponse?.data,
+              });
               
             }
           }
@@ -1048,10 +1063,16 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
           throw mediaError;
         }
       } else {
+        // Usar o telefone já normalizado (data.contactPhone já foi normalizado acima)
+        // Ainda assim, garantir que só tem números para a Evolution API
+        const cleanPhone = data.contactPhone.replace(/\D/g, '');
+        
+        console.log(`📤 [WebSocket] Enviando mensagem de texto para ${cleanPhone} via linha ${line.phone}`);
+        
         apiResponse = await axios.post(
           `${evolution.evolutionUrl}/message/sendText/${instanceName}`,
           {
-            number: data.contactPhone.replace(/\D/g, ''),
+            number: cleanPhone,
             text: data.message,
           },
           {
@@ -1059,6 +1080,11 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
             timeout: 30000, // 30 segundos
           }
         );
+        
+        console.log(`✅ [WebSocket] Resposta da Evolution API:`, {
+          status: apiResponse?.status,
+          data: apiResponse?.data,
+        });
       }
 
       // Buscar contato
