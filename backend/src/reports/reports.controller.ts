@@ -114,6 +114,12 @@ export class ReportsController {
     return this.reportsService.getLinhasReport(this.applySegmentFilter(filters, user));
   }
 
+  @Get('mensagens-por-linha')
+  @Roles('admin', 'supervisor', 'digital')
+  async getMensagensPorLinhaReport(@Query() filters: ReportFilterDto, @CurrentUser() user: any) {
+    return this.reportsService.getMensagensPorLinhaReport(this.applySegmentFilter(filters, user));
+  }
+
   @Get('resumo-atendimentos')
   @Roles('admin', 'supervisor', 'digital')
   async getResumoAtendimentosReport(@Query() filters: ReportFilterDto, @CurrentUser() user: any) {

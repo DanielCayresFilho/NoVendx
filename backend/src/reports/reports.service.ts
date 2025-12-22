@@ -1303,6 +1303,132 @@ export class ReportsService {
   }
 
   /**
+   * RELATÓRIO DE MENSAGENS POR LINHA
+   * Estrutura: Número, Carteira, Quantidade de Mensagens
+   */
+  async getMensagensPorLinhaReport(filters: ReportFilterDto) {
+    const whereClauseCampaigns: any = {};
+    const whereClauseConversations: any = {
+      sender: 'operator',
+    };
+    const whereClauseLines: any = {};
+
+    // Aplicar filtro de segmento nas linhas
+    if (filters.segment) {
+      whereClauseLines.segment = filters.segment;
+    }
+
+    // Aplicar filtro de data para campanhas
+    if (filters.startDate || filters.endDate) {
+      whereClauseCampaigns.dateTime = {};
+      if (filters.startDate) {
+        const startDate = new Date(filters.startDate);
+        startDate.setHours(0, 0, 0, 0);
+        whereClauseCampaigns.dateTime.gte = startDate;
+      }
+      if (filters.endDate) {
+        const endDate = new Date(filters.endDate);
+        endDate.setHours(23, 59, 59, 999);
+        whereClauseCampaigns.dateTime.lte = endDate;
+      }
+    }
+
+    // Aplicar filtro de data para conversas
+    if (filters.startDate || filters.endDate) {
+      whereClauseConversations.datetime = {};
+      if (filters.startDate) {
+        const startDate = new Date(filters.startDate);
+        startDate.setHours(0, 0, 0, 0);
+        whereClauseConversations.datetime.gte = startDate;
+      }
+      if (filters.endDate) {
+        const endDate = new Date(filters.endDate);
+        endDate.setHours(23, 59, 59, 999);
+        whereClauseConversations.datetime.lte = endDate;
+      }
+    }
+
+    // Buscar linhas primeiro (com filtro de segmento se aplicável)
+    const lines = await this.prisma.linesStock.findMany({
+      where: whereClauseLines,
+    });
+    const lineIds = lines.map(l => l.id);
+    const lineMap = new Map(lines.map(l => [l.id, l]));
+
+    // Buscar campanhas (mensagens massivas) apenas das linhas filtradas
+    const campaigns = await this.prisma.campaign.findMany({
+      where: {
+        ...whereClauseCampaigns,
+        lineReceptor: { in: lineIds }, // Apenas campanhas das linhas filtradas
+      },
+      select: {
+        lineReceptor: true,
+      },
+    });
+
+    // Buscar conversas (mensagens individuais enviadas por operadores) apenas das linhas filtradas
+    const conversations = await this.prisma.conversation.findMany({
+      where: {
+        ...whereClauseConversations,
+        userLine: { in: lineIds }, // Apenas conversas das linhas filtradas
+      },
+      select: {
+        userLine: true,
+      },
+    });
+
+    // Buscar segmentos para mapeamento
+    const segments = await this.prisma.segment.findMany();
+    const segmentMap = new Map(segments.map(s => [s.id, s]));
+
+    // Agrupar mensagens por linha
+    const lineGroups: Record<number, number> = {};
+
+    // Contar mensagens de campanhas
+    campaigns.forEach(campaign => {
+      if (campaign.lineReceptor) {
+        if (!lineGroups[campaign.lineReceptor]) {
+          lineGroups[campaign.lineReceptor] = 0;
+        }
+        lineGroups[campaign.lineReceptor]++;
+      }
+    });
+
+    // Contar mensagens de conversas
+    conversations.forEach(conv => {
+      if (conv.userLine) {
+        if (!lineGroups[conv.userLine]) {
+          lineGroups[conv.userLine] = 0;
+        }
+        lineGroups[conv.userLine]++;
+      }
+    });
+
+    // Construir resultado apenas para linhas que enviaram mensagens
+    const result: any[] = [];
+
+    Object.entries(lineGroups).forEach(([lineIdStr, count]) => {
+      const lineId = parseInt(lineIdStr);
+      const line = lineMap.get(lineId);
+      
+      if (line && count > 0) {
+        const segment = line.segment ? segmentMap.get(line.segment) : null;
+
+        result.push({
+          Número: line.phone,
+          Carteira: this.normalizeText(segment?.name) || 'Sem segmento',
+          'Quantidade de Mensagens': count,
+        });
+      }
+    });
+
+    // Ordenar por quantidade de mensagens (maior para menor)
+    result.sort((a, b) => b['Quantidade de Mensagens'] - a['Quantidade de Mensagens']);
+
+    return this.normalizeObject(result);
+  }
+
+  /**
    * RELATÓRIO DE USUÁRIOS
    * Estrutura: Nome, E-mail, Segmento, ROLE
    */
