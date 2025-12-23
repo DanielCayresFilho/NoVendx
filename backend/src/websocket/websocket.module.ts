@@ -19,6 +19,7 @@ import { MessageValidationModule } from '../message-validation/message-validatio
 import { MessageSendingModule } from '../message-sending/message-sending.module';
 import { LoggerModule } from '../logger/logger.module';
 import { TemplatesModule } from '../templates/templates.module';
+import { OperatorQueueModule } from '../operator-queue/operator-queue.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { TemplatesModule } from '../templates/templates.module';
     MessageSendingModule,
     LoggerModule,
     TemplatesModule,
+    forwardRef(() => OperatorQueueModule),
   ],
   providers: [WebsocketGateway, PrismaService],
   exports: [WebsocketGateway],
