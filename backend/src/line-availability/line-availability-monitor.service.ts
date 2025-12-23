@@ -144,14 +144,14 @@ export class LineAvailabilityMonitorService {
           // Se linha está banida ou desconectada, realocar
           if (!lineStatus || lineStatus === 'ban' || lineStatus === 'disconnected' || lineStatus.toLowerCase() === 'ban' || lineStatus.toLowerCase() === 'disconnected') {
           this.logger.warn(
-            `Linha ${line.phone} está ${lineStatus?.state || 'desconectada'} na Evolution. Realocando para operador ${operator.name}...`,
+            `Linha ${line.phone} está ${lineStatus || 'desconectada'} na Evolution. Realocando para operador ${operator.name}...`,
             'LineAvailability',
             {
               operatorId: operator.id,
               operatorName: operator.name,
               lineId: line.id,
               linePhone: line.phone,
-              lineStatus: lineStatus?.state || 'unknown',
+              lineStatus: lineStatus || 'unknown',
             },
           );
 
