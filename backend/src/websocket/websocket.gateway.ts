@@ -783,53 +783,60 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
             where: { phone: data.contactPhone },
           });
 
-          // Enviar template via TemplatesService
-          let templateResult = await this.templatesService.sendTemplate({
-            templateId: data.templateId,
-            phone: data.contactPhone,
-            contactName: contact?.name || data.message || 'Contato',
-            variables: data.templateVariables || [],
-            lineId: currentLineId,
-          });
-
-          // Se falhou com "Connection Closed", realocar linha e tentar novamente
-          if (!templateResult.success && templateResult.error && (
-            templateResult.error.includes('Connection Closed') || 
-            templateResult.error.includes('connection closed') ||
-            templateResult.error.includes('CONNECTION_CLOSED')
-          )) {
-            console.warn(`⚠️ [WebSocket] Linha ${currentLineId} desconectada ao enviar template. Realocando linha para operador ${user.name}...`);
+          // Enviar template via TemplatesService - com retry automático e realocação de linha para QUALQUER erro
+          let templateResult;
+          let templateAttempt = 0;
+          const maxTemplateRetries = 3;
+          
+          while (templateAttempt < maxTemplateRetries) {
+            console.log(`🔄 [WebSocket] Tentativa ${templateAttempt + 1}/${maxTemplateRetries} de enviar template via linha ${currentLineId}`);
             
-            // Realocar nova linha para o operador
+            templateResult = await this.templatesService.sendTemplate({
+              templateId: data.templateId,
+              phone: data.contactPhone,
+              contactName: contact?.name || data.message || 'Contato',
+              variables: data.templateVariables || [],
+              lineId: currentLineId,
+            });
+
+            // Se sucesso, sair do loop
+            if (templateResult.success) {
+              console.log(`✅ [WebSocket] Template enviado com sucesso na tentativa ${templateAttempt + 1}`);
+              break;
+            }
+
+            // Se falhou (QUALQUER erro), realocar linha e tentar novamente
+            templateAttempt++;
+            console.warn(`⚠️ [WebSocket] Erro ao enviar template (tentativa ${templateAttempt}/${maxTemplateRetries}): ${templateResult.error || 'Erro desconhecido'}. Realocando linha...`);
+            
             const reallocationResult = await this.lineAssignmentService.reallocateLineForOperator(user.id, user.segment, currentLineId);
             
             if (reallocationResult.success && reallocationResult.lineId && reallocationResult.lineId !== currentLineId) {
-              // Atualizar linha atual
               currentLineId = reallocationResult.lineId;
               user.line = reallocationResult.lineId;
               
-              // Buscar nova linha
               const newLine = await this.prisma.linesStock.findUnique({
                 where: { id: reallocationResult.lineId },
               });
               
               if (newLine) {
                 line = newLine;
-                console.log(`✅ [WebSocket] Linha realocada: ${line?.phone} → ${newLine.phone}`);
-                
-                // Tentar enviar template novamente com a nova linha
-                templateResult = await this.templatesService.sendTemplate({
-                  templateId: data.templateId,
-                  phone: data.contactPhone,
-                  contactName: contact?.name || data.message || 'Contato',
-                  variables: data.templateVariables || [],
-                  lineId: currentLineId,
-                });
+                console.log(`✅ [WebSocket] Linha realocada: ${line?.phone} → ${newLine.phone}. Tentando enviar template novamente...`);
+                continue; // Tentar novamente com nova linha
+              } else {
+                console.error(`❌ [WebSocket] Nova linha ${reallocationResult.lineId} não encontrada no banco`);
+                break; // Se não encontrou a linha, não adianta continuar
               }
             } else {
               console.error(`❌ [WebSocket] Não foi possível realocar linha para operador ${user.name}`);
-              return { error: 'Linha desconectada e não foi possível realocar uma nova linha' };
+              break; // Se não conseguiu realocar, não adianta continuar
             }
+          }
+          
+          // Se saiu do loop sem sucesso, verificar se foi porque esgotou tentativas
+          if (!templateResult.success) {
+            console.error(`❌ [WebSocket] Não foi possível enviar template após ${templateAttempt} tentativa(s)`);
+            return { error: templateResult.error || 'Erro desconhecido ao enviar template após múltiplas tentativas' };
           }
 
           if (templateResult.success) {
