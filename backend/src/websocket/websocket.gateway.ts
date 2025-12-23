@@ -1011,49 +1011,76 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
             });
             throw new Error('Não foi possível obter o arquivo em base64. Verifique se o upload foi realizado corretamente.');
           }
-          
+
+          // Obter tipo MIME do arquivo para adicionar ao base64
+          const getMimeTypeFromFileName = (fileName: string): string => {
+            const ext = fileName.split('.').pop()?.toLowerCase();
+            const mimeTypes: Record<string, string> = {
+              'pdf': 'application/pdf',
+              'doc': 'application/msword',
+              'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+              'xls': 'application/vnd.ms-excel',
+              'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+              'ppt': 'application/vnd.ms-powerpoint',
+              'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+              'txt': 'text/plain',
+              'csv': 'text/csv',
+              'jpg': 'image/jpeg',
+              'jpeg': 'image/jpeg',
+              'png': 'image/png',
+              'gif': 'image/gif',
+              'webp': 'image/webp',
+              'mp4': 'video/mp4',
+              'mpeg': 'video/mpeg',
+              'mp3': 'audio/mpeg',
+              'ogg': 'audio/ogg',
+              'wav': 'audio/wav',
+            };
+            return mimeTypes[ext || ''] || 'application/octet-stream';
+          };
+
+          // Adicionar prefixo data URI ao base64 (Evolution API precisa disso)
+          const mimeType = getMimeTypeFromFileName(cleanFileName);
+          const base64WithPrefix = `data:${mimeType};base64,${base64File}`;
+
+          console.log(`📦 [WebSocket] Preparando envio - Tipo: ${mimeType}, Tamanho: ${(base64File.length / 1024).toFixed(2)} KB`);
+
           let payload: any = {
             number: cleanPhone,
             mediatype: getMediaType(cleanFileName),
             fileName: cleanFileName,
-            base64: base64File,
+            media: base64WithPrefix, // Usar campo "media" com prefixo data URI
           };
-          
+
           if (data.message && data.message.trim()) {
             payload.caption = data.message;
           }
-          
-          // Tentar enviar com base64 primeiro
+
+          // Enviar documento
           try {
-            console.log(`📤 [WebSocket] OPERADOR enviando documento via base64 para ${cleanPhone} via linha ${line.phone}`);
+            console.log(`📤 [WebSocket] OPERADOR enviando documento para ${cleanPhone} via linha ${line.phone}`);
             apiResponse = await axios.post(
               `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
               payload,
               {
-                headers: { 'apikey': evolution.evolutionKey },
-                timeout: 30000,
+                headers: {
+                  'apikey': evolution.evolutionKey,
+                  'Content-Type': 'application/json',
+                },
+                timeout: 60000, // Aumentar timeout para 60s (arquivos grandes podem demorar)
+                maxContentLength: Infinity,
+                maxBodyLength: Infinity,
               }
             );
-            console.log(`✅ [WebSocket] Documento enviado com sucesso (base64)`);
-          } catch (base64Error: any) {
-            // Se base64 falhar, tentar com campo "media"
-            delete payload.base64;
-            payload.media = base64File;
-            
-            try {
-              console.log(`📤 [WebSocket] Tentando enviar documento via campo "media"...`);
-              apiResponse = await axios.post(
-                `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
-                payload,
-                {
-                  headers: { 'apikey': evolution.evolutionKey },
-                  timeout: 30000,
-                }
-              );
-              console.log(`✅ [WebSocket] Documento enviado com sucesso (campo media)`);
-            } catch (mediaError: any) {
-              throw mediaError;
-            }
+            console.log(`✅ [WebSocket] Documento enviado com sucesso!`);
+          } catch (sendError: any) {
+            console.error(`❌ [WebSocket] Erro ao enviar via Evolution API:`, {
+              status: sendError.response?.status,
+              statusText: sendError.response?.statusText,
+              data: sendError.response?.data,
+              message: sendError.message,
+            });
+            throw sendError;
           }
           
           // Limpar arquivos temporários não é necessário aqui - os arquivos são gerenciados pelo MediaService
