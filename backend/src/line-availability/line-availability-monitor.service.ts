@@ -156,13 +156,14 @@ export class LineAvailabilityMonitorService {
           );
 
           try {
-            // Desvincular linha banida
-            await this.linesService.unassignOperatorFromLine(line.id, operator.id);
-
             // Realocar nova linha (mesma regra: mesmo segmento ou "Padrão")
+            // A função reallocateLineForOperator vai desvincular e marcar a linha como banida
             const reallocationResult = await this.lineAssignmentService.reallocateLineForOperator(
               operator.id,
-              operator.segment || null
+              operator.segment || null,
+              line.id, // oldLineId - linha banida
+              undefined, // traceId
+              true // markAsBanned = true - marca linha como banida e desvincula TODOS os operadores
             );
 
             if (reallocationResult.success && reallocationResult.lineId) {

@@ -94,8 +94,9 @@ export class LineAssignmentService {
         }),
       );
 
-      // Prioridade 1: Linhas do segmento do operador
+      // Prioridade 1: Linhas do segmento do operador (excluindo a linha antiga se fornecida)
       let candidateLine = availableLines.find((line) => {
+        if (excludeLineId && line.id === excludeLineId) return false; // IMPORTANTE: Excluir linha antiga
         if (line.segment !== userSegment) return false;
         if (line.operators.length >= 2) return false;
         // Verificar se não mistura segmentos
@@ -188,16 +189,69 @@ export class LineAssignmentService {
 
   /**
    * Realoca uma linha para um operador (quando linha atual foi banida ou com erro)
+   * IMPORTANTE: Se a linha estiver banida, atualiza o status para 'ban' e desvincula TODOS os operadores
    */
   async reallocateLineForOperator(
     userId: number,
     userSegment: number | null,
     oldLineId?: number,
     traceId?: string,
+    markAsBanned: boolean = false,
   ): Promise<LineAssignmentResult> {
     try {
-      // Remover operador da linha antiga
-      if (oldLineId) {
+      // Se linha deve ser marcada como banida, atualizar status e desvincular TODOS os operadores
+      if (oldLineId && markAsBanned) {
+        // Buscar linha para verificar status atual
+        const oldLine = await this.prisma.linesStock.findUnique({
+          where: { id: oldLineId },
+          include: {
+            operators: {
+              include: {
+                user: {
+                  select: { id: true, name: true },
+                },
+              },
+            },
+          },
+        });
+
+        if (oldLine && oldLine.lineStatus !== 'ban') {
+          // Atualizar status da linha para 'ban'
+          await this.prisma.linesStock.update({
+            where: { id: oldLineId },
+            data: { lineStatus: 'ban' },
+          });
+
+          this.logger.warn(
+            `Linha ${oldLine.phone} marcada como banida`,
+            'LineAssignment',
+            { lineId: oldLineId, operatorsCount: oldLine.operators.length },
+          );
+
+          // Desvincular TODOS os operadores dessa linha
+          const operatorIds = oldLine.operators.map(op => op.userId);
+          await this.prisma.lineOperator.deleteMany({
+            where: {
+              lineId: oldLineId,
+            },
+          });
+
+          // Atualizar campo 'line' de todos os operadores vinculados para null
+          await this.prisma.user.updateMany({
+            where: {
+              id: { in: operatorIds },
+            },
+            data: { line: null },
+          });
+
+          this.logger.log(
+            `Todos os operadores desvinculados da linha banida ${oldLine.phone}`,
+            'LineAssignment',
+            { lineId: oldLineId, operatorIds },
+          );
+        }
+      } else if (oldLineId) {
+        // Se não é para marcar como banida, apenas remover o operador atual
         await this.prisma.lineOperator.deleteMany({
           where: {
             userId,

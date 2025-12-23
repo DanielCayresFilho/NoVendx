@@ -358,10 +358,13 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                         // Desvincular a linha banida
                         await this.linesService.unassignOperatorFromLine(fallbackLine.id, user.id);
                         
-                        // Realocar nova linha
+                        // Realocar nova linha e marcar linha antiga como banida
                         const reallocationResult = await this.lineAssignmentService.reallocateLineForOperator(
                           user.id,
-                          user.segment || null
+                          user.segment || null,
+                          fallbackLine.id, // oldLineId - linha banida
+                          undefined, // traceId
+                          true // markAsBanned = true - marca linha como banida
                         );
                         
                         if (reallocationResult.success && reallocationResult.lineId) {
@@ -579,16 +582,17 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
           // Se linha está banida ou desconectada, realocar ANTES de enviar mensagem
           if (!lineStatus || lineStatus === 'ban' || lineStatus === 'disconnected' || lineStatus.toLowerCase() === 'ban' || lineStatus.toLowerCase() === 'disconnected') {
-            console.warn(`⚠️ [WebSocket] Linha ${currentLine.phone} está ${lineStatus || 'desconectada'} antes de enviar mensagem. Realocando...`);
+            console.warn(`⚠️ [WebSocket] Linha ${currentLine.phone} está ${lineStatus || 'desconectada'} antes de enviar mensagem. Marcando como banida e realocando...`);
 
             try {
-              // Desvincular linha banida
-              await this.linesService.unassignOperatorFromLine(currentLine.id, user.id);
-
-              // Realocar nova linha (mesma regra: mesmo segmento ou "Padrão")
+              // Realocar nova linha e marcar linha antiga como banida
+              // A função reallocateLineForOperator vai desvincular todos os operadores e marcar como banida
               const reallocationResult = await this.lineAssignmentService.reallocateLineForOperator(
                 user.id,
-                user.segment || null
+                user.segment || null,
+                currentLine.id, // oldLineId - linha banida
+                undefined, // traceId
+                true // markAsBanned = true - marca linha como banida
               );
 
               if (reallocationResult.success && reallocationResult.lineId) {
@@ -1126,49 +1130,135 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
             lastError = error;
             attempt++;
             
-            console.warn(`⚠️ [WebSocket] Erro ao enviar (tentativa ${attempt}/${maxRetries}). Linha ${currentLineId}. Realocando linha para operador ${user.name}...`);
-            console.warn(`⚠️ [WebSocket] Erro:`, {
-              status: error.response?.status,
-              message: error.response?.data?.message || error.message,
-            });
+            const errorStatus = error.response?.status;
+            const errorMessage = error.response?.data?.message || error.message;
             
-            // Realocar nova linha para QUALQUER erro
-            const reallocationResult = await this.lineAssignmentService.reallocateLineForOperator(user.id, user.segment, currentLineId);
+            console.warn(`⚠️ [WebSocket] Erro ao enviar (tentativa ${attempt}/${maxRetries}). Linha ${currentLineId}. Erro: ${errorStatus} - ${errorMessage}`);
             
-            if (reallocationResult.success && reallocationResult.lineId && reallocationResult.lineId !== currentLineId) {
-              // Atualizar variáveis de linha
-              currentLineId = reallocationResult.lineId;
-              user.line = reallocationResult.lineId;
-              
-              // Buscar nova linha
-              const newLine = await this.prisma.linesStock.findUnique({
-                where: { id: reallocationResult.lineId },
-              });
-              
-              if (newLine) {
-                line = newLine;
-                // Recriar instanceName com nova linha
-                const newInstanceName = `line_${newLine.phone.replace(/\D/g, '')}`;
-                
-                // Buscar evolution da nova linha
-                const newEvolution = await this.prisma.evolution.findUnique({
-                  where: { evolutionName: newLine.evolutionName },
+            // Verificar se erro indica problema com a linha (ban, disconnected) ou outro erro
+            // Erros 400 podem ser: linha banida, número inválido, mensagem inválida, etc.
+            let shouldReallocate = false;
+            let markLineAsBanned = false; // Flag para marcar linha como banida no banco
+            
+            if (errorStatus === 400 || errorStatus === 403 || errorStatus === 404 || errorStatus === 500) {
+              // Verificar status da linha na Evolution antes de realocar
+              try {
+                const currentLineCheck = await this.prisma.linesStock.findUnique({
+                  where: { id: currentLineId },
                 });
                 
-                if (newEvolution) {
-                  evolution = newEvolution;
-                  instanceName = newInstanceName;
-                  console.log(`✅ [WebSocket] Linha realocada: ${line?.phone} → ${newLine.phone}. Tentando reenviar (tentativa ${attempt + 1}/${maxRetries})...`);
+                if (currentLineCheck) {
+                  // Buscar Evolution para verificar status
+                  const currentEvolution = await this.prisma.evolution.findUnique({
+                    where: { evolutionName: currentLineCheck.evolutionName },
+                  });
                   
-                  // Continuar o loop para tentar novamente com a nova linha
-                  continue;
+                  if (currentEvolution) {
+                    const instanceName = `line_${currentLineCheck.phone.replace(/\D/g, '')}`;
+                    const lineStatus = await this.healthCheckCacheService.getConnectionStatus(
+                      currentEvolution.evolutionUrl,
+                      currentEvolution.evolutionKey,
+                      instanceName
+                    );
+                    
+                    // Se linha está banida ou desconectada, realocar e marcar como banida
+                    if (!lineStatus || lineStatus === 'ban' || lineStatus === 'disconnected') {
+                      const statusText = lineStatus || 'desconectada';
+                      console.warn(`⚠️ [WebSocket] Linha ${currentLineCheck.phone} está ${statusText} na Evolution. Marcando como banida e realocando...`);
+                      shouldReallocate = true;
+                      // Marcar que a linha deve ser atualizada como banida
+                      markLineAsBanned = true;
+                    } else if (errorMessage?.toLowerCase().includes('ban') || 
+                              errorMessage?.toLowerCase().includes('blocked') ||
+                              errorMessage?.toLowerCase().includes('disconnect')) {
+                      // Se a mensagem de erro menciona ban/blocked, também realocar
+                      console.warn(`⚠️ [WebSocket] Mensagem de erro indica problema com linha: ${errorMessage}`);
+                      shouldReallocate = true;
+                    } else {
+                      // Erro 400 pode ser problema com número/mensagem, não necessariamente com linha
+                      console.warn(`⚠️ [WebSocket] Erro ${errorStatus} pode ser problema com número/mensagem, não com linha. Verificando...`);
+                      // Tentar verificar se há outras linhas disponíveis, mas só realocar se realmente necessário
+                      if (attempt >= 2) {
+                        // Na segunda tentativa, se ainda erro 400, pode ser problema com a linha
+                        shouldReallocate = true;
+                      }
+                    }
+                  } else {
+                    // Evolution não encontrada, assumir que precisa realocar
+                    console.warn(`⚠️ [WebSocket] Evolution não encontrada para linha ${currentLineCheck.phone}`);
+                    shouldReallocate = true;
+                  }
+                }
+              } catch (statusError: any) {
+                // Se não conseguir verificar status, assumir que precisa realocar após 2 tentativas
+                console.warn(`⚠️ [WebSocket] Erro ao verificar status da linha: ${statusError.message}`);
+                if (attempt >= 2) {
+                  shouldReallocate = true;
                 }
               }
+            } else {
+              // Outros erros (500, 503, etc) podem indicar problema temporário, mas vamos realocar também
+              shouldReallocate = true;
+            }
+            
+            // Realocar linha se necessário
+            if (shouldReallocate) {
+              console.warn(`⚠️ [WebSocket] Realocando linha para operador ${user.name}...`);
+              const reallocationResult = await this.lineAssignmentService.reallocateLineForOperator(
+                user.id, 
+                user.segment || null, 
+                currentLineId,
+                undefined, // traceId
+                markLineAsBanned // Marcar linha como banida se necessário
+              );
+              
+              if (reallocationResult.success && reallocationResult.lineId && reallocationResult.lineId !== currentLineId) {
+                // Atualizar variáveis de linha
+                currentLineId = reallocationResult.lineId;
+                user.line = reallocationResult.lineId;
+                
+                // Buscar nova linha
+                const newLine = await this.prisma.linesStock.findUnique({
+                  where: { id: reallocationResult.lineId },
+                });
+                
+                if (newLine) {
+                  line = newLine;
+                  // Recriar instanceName com nova linha
+                  const newInstanceName = `line_${newLine.phone.replace(/\D/g, '')}`;
+                  
+                  // Buscar evolution da nova linha
+                  const newEvolution = await this.prisma.evolution.findUnique({
+                    where: { evolutionName: newLine.evolutionName },
+                  });
+                  
+                  if (newEvolution) {
+                    evolution = newEvolution;
+                    instanceName = newInstanceName;
+                    console.log(`✅ [WebSocket] Linha realocada: ${line?.phone} → ${newLine.phone}. Tentando reenviar (tentativa ${attempt + 1}/${maxRetries})...`);
+                    
+                    // Continuar o loop para tentar novamente com a nova linha
+                    continue;
+                  } else {
+                    console.error(`❌ [WebSocket] Evolution não encontrada para linha ${newLine.phone}`);
+                  }
+                } else {
+                  console.error(`❌ [WebSocket] Linha realocada ${reallocationResult.lineId} não encontrada no banco`);
+                }
+              } else {
+                console.error(`❌ [WebSocket] Não foi possível realocar linha: ${reallocationResult.reason || 'Nenhuma linha disponível'}`);
+                if (reallocationResult.lineId === currentLineId) {
+                  console.error(`❌ [WebSocket] Linha realocada é a mesma (${currentLineId}). Não há outras linhas disponíveis.`);
+                }
+              }
+            } else {
+              // Se não deve realocar (erro pode ser com número/mensagem), não fazer nada
+              console.warn(`⚠️ [WebSocket] Erro não relacionado à linha. Não será feita realocação.`);
             }
             
             // Se não conseguiu realocar ou já tentou todas as vezes, lançar erro
             if (attempt >= maxRetries) {
-              throw new Error(`Não foi possível enviar após ${maxRetries} tentativas com realocação de linha. Último erro: ${lastError?.response?.data?.message || lastError?.message || 'Erro desconhecido'}`);
+              throw new Error(`Não foi possível enviar após ${maxRetries} tentativas. Último erro: ${errorMessage || 'Erro desconhecido'}`);
             }
           }
         }
