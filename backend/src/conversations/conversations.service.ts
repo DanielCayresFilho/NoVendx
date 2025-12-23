@@ -40,15 +40,16 @@ export class ConversationsService {
     });
   }
 
-  async findByContactPhone(contactPhone: string, tabulated: boolean = false, userLine?: number) {
+  async findByContactPhone(contactPhone: string, tabulated: boolean = false, userId?: number) {
     const where: any = {
       contactPhone,
       tabulation: tabulated ? { not: null } : null,
     };
 
-    // Se for operador, filtrar apenas conversas da sua linha
-    if (userLine) {
-      where.userLine = userLine;
+    // IMPORTANTE: Se for operador, filtrar por userId (não por userLine)
+    // Isso permite que as conversas continuem aparecendo mesmo se a linha foi banida
+    if (userId) {
+      where.userId = userId;
     }
 
     return this.prisma.conversation.findMany({

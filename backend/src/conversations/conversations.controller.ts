@@ -32,9 +32,9 @@ export class ConversationsController {
     const where: any = { ...filters };
 
     // Aplicar filtros baseados no papel do usuário
-    if (user.role === Role.operator && user.line) {
-      // Operador só vê conversas da sua linha E do seu userId específico
-      where.userLine = user.line;
+    if (user.role === Role.operator) {
+      // IMPORTANTE: Operador vê conversas apenas por userId (não por userLine)
+      // Isso permite que as conversas continuem aparecendo mesmo se a linha foi banida
       where.userId = user.id; // Filtrar apenas conversas atribuídas a ele
     } else if (user.role === Role.supervisor && user.segment) {
       // Supervisor só vê conversas do seu segmento
@@ -101,14 +101,10 @@ export class ConversationsController {
     @CurrentUser() user?: any,
   ) {
     // Admin e Supervisor podem ver qualquer contato
-    // Operador só pode ver contatos da sua linha
-    if (user?.role === Role.operator && user?.line) {
-      // Verificar se o contato tem conversas na linha do operador
-      return this.conversationsService.findByContactPhone(
-        phone,
-        tabulated === 'true',
-        user.line, // Passar a linha como filtro adicional
-      );
+    // Operador só pode ver contatos que tem conversas com ele (por userId, não por linha)
+    // IMPORTANTE: Não filtrar por userLine para que conversas de linhas banidas continuem aparecendo
+    if (user?.role === Role.operator) {
+      return this.conversationsService.findByContactPhone(phone, tabulated === 'true', user.id);
     }
     return this.conversationsService.findByContactPhone(
       phone,

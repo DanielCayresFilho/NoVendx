@@ -741,10 +741,10 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         return { error: 'Linha não disponível' };
       }
 
-      const evolution = await this.prisma.evolution.findUnique({
+      let evolution = await this.prisma.evolution.findUnique({
         where: { evolutionName: line.evolutionName },
       });
-      const instanceName = `line_${line.phone.replace(/\D/g, '')}`;
+      let instanceName = `line_${line.phone.replace(/\D/g, '')}`;
 
       // Rate Limiting: Verificar se a linha pode enviar mensagem
       const canSend = await this.rateLimitingService.canSendMessage(currentLineId);
@@ -784,13 +784,53 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
           });
 
           // Enviar template via TemplatesService
-          const templateResult = await this.templatesService.sendTemplate({
+          let templateResult = await this.templatesService.sendTemplate({
             templateId: data.templateId,
             phone: data.contactPhone,
             contactName: contact?.name || data.message || 'Contato',
             variables: data.templateVariables || [],
             lineId: currentLineId,
           });
+
+          // Se falhou com "Connection Closed", realocar linha e tentar novamente
+          if (!templateResult.success && templateResult.error && (
+            templateResult.error.includes('Connection Closed') || 
+            templateResult.error.includes('connection closed') ||
+            templateResult.error.includes('CONNECTION_CLOSED')
+          )) {
+            console.warn(`⚠️ [WebSocket] Linha ${currentLineId} desconectada ao enviar template. Realocando linha para operador ${user.name}...`);
+            
+            // Realocar nova linha para o operador
+            const reallocationResult = await this.lineAssignmentService.reallocateLineForOperator(user.id, user.segment, currentLineId);
+            
+            if (reallocationResult.success && reallocationResult.lineId && reallocationResult.lineId !== currentLineId) {
+              // Atualizar linha atual
+              currentLineId = reallocationResult.lineId;
+              user.line = reallocationResult.lineId;
+              
+              // Buscar nova linha
+              const newLine = await this.prisma.linesStock.findUnique({
+                where: { id: reallocationResult.lineId },
+              });
+              
+              if (newLine) {
+                line = newLine;
+                console.log(`✅ [WebSocket] Linha realocada: ${line?.phone} → ${newLine.phone}`);
+                
+                // Tentar enviar template novamente com a nova linha
+                templateResult = await this.templatesService.sendTemplate({
+                  templateId: data.templateId,
+                  phone: data.contactPhone,
+                  contactName: contact?.name || data.message || 'Contato',
+                  variables: data.templateVariables || [],
+                  lineId: currentLineId,
+                });
+              }
+            } else {
+              console.error(`❌ [WebSocket] Não foi possível realocar linha para operador ${user.name}`);
+              return { error: 'Linha desconectada e não foi possível realocar uma nova linha' };
+            }
+          }
 
           if (templateResult.success) {
             // Buscar conversa criada pelo template
@@ -899,23 +939,90 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         // Erro no health check não deve bloquear envio (pode ser problema temporário da API)
       }
 
+      // Função auxiliar para detectar erro de conexão
+      const isConnectionError = (error: any): boolean => {
+        const errorMessage = error?.response?.data?.message || error?.message || '';
+        const errorData = error?.response?.data;
+        return (
+          errorMessage.includes('Connection Closed') ||
+          errorMessage.includes('connection closed') ||
+          errorMessage.includes('CONNECTION_CLOSED') ||
+          (errorData?.response?.message && Array.isArray(errorData.response.message) && 
+           errorData.response.message.some((msg: string) => 
+             msg.includes('Connection Closed') || msg.includes('connection closed')
+           ))
+        );
+      };
+
+      // Função auxiliar para tentar realocar linha e reenviar
+      const tryReallocateAndResend = async (sendFunction: () => Promise<any>): Promise<any> => {
+        try {
+          return await sendFunction();
+        } catch (error: any) {
+          if (isConnectionError(error)) {
+            console.warn(`⚠️ [WebSocket] Linha ${currentLineId} desconectada. Realocando linha para operador ${user.name}...`);
+            
+            // Realocar nova linha
+            const reallocationResult = await this.lineAssignmentService.reallocateLineForOperator(user.id, user.segment, currentLineId);
+            
+            if (reallocationResult.success && reallocationResult.lineId && reallocationResult.lineId !== currentLineId) {
+              // Atualizar variáveis de linha
+              currentLineId = reallocationResult.lineId;
+              user.line = reallocationResult.lineId;
+              
+              // Buscar nova linha
+              const newLine = await this.prisma.linesStock.findUnique({
+                where: { id: reallocationResult.lineId },
+              });
+              
+              if (newLine) {
+                line = newLine;
+                // Recriar instanceName com nova linha
+                const newInstanceName = `line_${newLine.phone.replace(/\D/g, '')}`;
+                
+                // Buscar evolution da nova linha
+                const newEvolution = await this.prisma.evolution.findUnique({
+                  where: { evolutionName: newLine.evolutionName },
+                });
+                
+                if (newEvolution) {
+                  evolution = newEvolution;
+                  instanceName = newInstanceName;
+                  console.log(`✅ [WebSocket] Linha realocada: ${line?.phone} → ${newLine.phone}. Tentando reenviar...`);
+                  
+                  // Tentar enviar novamente com nova linha
+                  return await sendFunction();
+                }
+              }
+            }
+            
+            throw new Error('Linha desconectada e não foi possível realocar uma nova linha');
+          }
+          
+          // Se não for erro de conexão, propagar o erro
+          throw error;
+        }
+      };
+
       // Enviar mensagem via Evolution API
       let apiResponse;
 
       if (data.messageType === 'image' && data.mediaUrl) {
-        apiResponse = await axios.post(
-          `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
-          {
-            number: data.contactPhone.replace(/\D/g, ''),
-            mediaUrl: data.mediaUrl,
-            caption: data.message,
-            mediatype: 'image', // Evolution API requer mediatype
-          },
-          {
-            headers: { 'apikey': evolution.evolutionKey },
-            timeout: 30000, // 30 segundos
-          }
-        );
+        apiResponse = await tryReallocateAndResend(async () => {
+          return await axios.post(
+            `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
+            {
+              number: data.contactPhone.replace(/\D/g, ''),
+              mediaUrl: data.mediaUrl,
+              caption: data.message,
+              mediatype: 'image',
+            },
+            {
+              headers: { 'apikey': evolution.evolutionKey },
+              timeout: 30000,
+            }
+          );
+        });
       } else if (data.messageType === 'document' && data.mediaUrl) {
         // Para documentos, tentar primeiro com sendMedia, se falhar, tentar sendDocument
         // Extrair nome do arquivo (usar fileName do data se disponível, senão da URL)
@@ -1017,8 +1124,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
           console.log(`📦 [WebSocket] Preparando envio - Tamanho: ${(base64File.length / 1024).toFixed(2)} KB`);
 
-          // Construir URL pública do arquivo
-          const appUrl = process.env.APP_URL || 'https://api.newvend.taticamarketing.com.br';
+          // Construir URL pública do arquivo (appUrl já foi declarado acima)
           const publicMediaUrl = data.mediaUrl.startsWith('http')
             ? data.mediaUrl
             : `${appUrl}${data.mediaUrl}`;
@@ -1036,41 +1142,27 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
             payload.caption = data.message;
           }
 
-          // Enviar documento via URL
-          try {
-            console.log(`📤 [WebSocket] OPERADOR enviando documento para ${cleanPhone} via linha ${line.phone}`);
-            console.log(`📋 [WebSocket] Payload:`, JSON.stringify(payload, null, 2));
-
-            apiResponse = await axios.post(
-              `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
-              payload,
-              {
-                headers: {
-                  'apikey': evolution.evolutionKey,
-                  'Content-Type': 'application/json',
-                },
-                timeout: 60000,
-                maxContentLength: Infinity,
-                maxBodyLength: Infinity,
-              }
-            );
-            console.log(`✅ [WebSocket] Documento enviado com sucesso!`);
-          } catch (sendError: any) {
-            console.error(`❌ [WebSocket] Erro ao enviar via Evolution API (URL):`, {
-              status: sendError.response?.status,
-              statusText: sendError.response?.statusText,
-              data: sendError.response?.data,
-              message: sendError.message,
-            });
-
-            // Se falhar com URL, tentar com base64 puro (sem prefixo data:)
-            console.log(`🔄 [WebSocket] Tentando com base64 puro...`);
+          // Função para enviar documento (será usado na realocação)
+          // Usar arrow function para capturar variáveis dinamicamente
+          const sendDocumentFunction = async () => {
+            // Reconstruir payload com valores atualizados (caso linha tenha sido trocada)
+            const currentPayload: any = {
+              number: cleanPhone,
+              mediatype: getMediaType(cleanFileName),
+              media: publicMediaUrl,
+              fileName: cleanFileName,
+            };
+            
+            if (data.message && data.message.trim()) {
+              currentPayload.caption = data.message;
+            }
+            
             try {
-              payload.media = base64File; // Base64 puro sem prefixo
-
-              apiResponse = await axios.post(
+              console.log(`📤 [WebSocket] OPERADOR enviando documento para ${cleanPhone} via linha ${line.phone}`);
+              
+              return await axios.post(
                 `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
-                payload,
+                currentPayload,
                 {
                   headers: {
                     'apikey': evolution.evolutionKey,
@@ -1081,17 +1173,37 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                   maxBodyLength: Infinity,
                 }
               );
-              console.log(`✅ [WebSocket] Documento enviado com sucesso (base64 puro)!`);
-            } catch (base64Error: any) {
-              console.error(`❌ [WebSocket] Erro ao enviar com base64 puro:`, {
-                status: base64Error.response?.status,
-                statusText: base64Error.response?.statusText,
-                data: base64Error.response?.data,
-                message: base64Error.message,
-              });
-              throw base64Error;
+            } catch (sendError: any) {
+              // Se falhar com URL, tentar com base64 puro (apenas se não for erro de conexão)
+              if (!isConnectionError(sendError)) {
+                console.log(`🔄 [WebSocket] Tentando com base64 puro...`);
+                currentPayload.media = base64File;
+                
+                try {
+                  return await axios.post(
+                    `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
+                    currentPayload,
+                    {
+                      headers: {
+                        'apikey': evolution.evolutionKey,
+                        'Content-Type': 'application/json',
+                      },
+                      timeout: 60000,
+                      maxContentLength: Infinity,
+                      maxBodyLength: Infinity,
+                    }
+                  );
+                } catch (base64Error: any) {
+                  throw base64Error;
+                }
+              }
+              throw sendError;
             }
-          }
+          };
+
+          // Enviar documento com realocação automática
+          apiResponse = await tryReallocateAndResend(sendDocumentFunction);
+          console.log(`✅ [WebSocket] Documento enviado com sucesso!`);
           
           // Limpar arquivos temporários não é necessário aqui - os arquivos são gerenciados pelo MediaService
         } catch (mediaError: any) {
@@ -1106,23 +1218,24 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
           throw mediaError;
         }
       } else {
-        // Usar o telefone já normalizado (data.contactPhone já foi normalizado acima)
-        // Ainda assim, garantir que só tem números para a Evolution API
+        // Mensagem de texto normal - usar realocação automática se necessário
         const cleanPhone = data.contactPhone.replace(/\D/g, '');
         
-        console.log(`📤 [WebSocket] Enviando mensagem de texto para ${cleanPhone} via linha ${line.phone}`);
-        
-        apiResponse = await axios.post(
-          `${evolution.evolutionUrl}/message/sendText/${instanceName}`,
-          {
-            number: cleanPhone,
-            text: data.message,
-          },
-          {
-            headers: { 'apikey': evolution.evolutionKey },
-            timeout: 30000, // 30 segundos
-          }
-        );
+        apiResponse = await tryReallocateAndResend(async () => {
+          console.log(`📤 [WebSocket] Enviando mensagem de texto para ${cleanPhone} via linha ${line.phone}`);
+          
+          return await axios.post(
+            `${evolution.evolutionUrl}/message/sendText/${instanceName}`,
+            {
+              number: cleanPhone,
+              text: data.message,
+            },
+            {
+              headers: { 'apikey': evolution.evolutionKey },
+              timeout: 30000,
+            }
+          );
+        });
         
         console.log(`✅ [WebSocket] Resposta da Evolution API:`, {
           status: apiResponse?.status,
