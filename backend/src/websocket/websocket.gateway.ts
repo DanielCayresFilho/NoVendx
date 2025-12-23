@@ -948,41 +948,33 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
           // PRIORIDADE 1: Base64 do cliente (direto, sem ler do servidor)
           let base64File: string | null = data.base64 || data.mediaBase64 || null;
           
-          // Se não veio base64 do cliente E tem mediaUrl, tentar ler do servidor
-          let filePath: string | null = null;
-          if (!base64File && data.mediaUrl) {
+          // Se não veio base64 do cliente E tem mediaUrl, SEMPRE tentar ler do servidor se for nosso servidor
+          const appUrl = process.env.APP_URL || 'https://api.newvend.taticamarketing.com.br';
+          const isOurServer = data.mediaUrl && (
+            data.mediaUrl.startsWith('/media/') || 
+            data.mediaUrl.startsWith(appUrl)
+          );
+          
+          if (!base64File && data.mediaUrl && isOurServer) {
+            // É do nosso servidor - SEMPRE ler arquivo e converter para base64
+            let filename: string;
+            
             if (data.mediaUrl.startsWith('/media/')) {
-              // URL relativa do nosso servidor
-              const filename = data.mediaUrl.replace('/media/', '');
-              try {
-                filePath = await this.mediaService.getFilePath(filename);
-              } catch {
-                console.warn(`⚠️ [WebSocket] Arquivo não encontrado no storage: ${filename}`);
-              }
-            } else if (data.mediaUrl.startsWith('http')) {
-              // URL completa - verificar se é do nosso servidor
-              const appUrl = process.env.APP_URL || 'https://api.newvend.taticamarketing.com.br';
-              if (data.mediaUrl.startsWith(appUrl)) {
-                const urlPath = new URL(data.mediaUrl).pathname;
-                const filename = urlPath.replace('/media/', '');
-                try {
-                  filePath = await this.mediaService.getFilePath(filename);
-                } catch {
-                  console.warn(`⚠️ [WebSocket] Arquivo não encontrado no storage: ${filename}`);
-                }
-              }
-              // Se for URL externa, não tentar ler - usar URL diretamente
+              filename = data.mediaUrl.replace('/media/', '');
+            } else {
+              // URL completa do nosso servidor
+              const urlPath = new URL(data.mediaUrl).pathname;
+              filename = urlPath.replace('/media/', '');
             }
             
-            // Se encontrou arquivo no servidor, ler e converter para base64
-            if (filePath) {
-              try {
-                const fileBuffer = await fs.readFile(filePath);
-                base64File = fileBuffer.toString('base64');
-              } catch (fileError: any) {
-                console.error(`❌ [WebSocket] Erro ao ler arquivo ${filePath}:`, fileError.message);
-                base64File = null;
-              }
+            try {
+              const filePath = await this.mediaService.getFilePath(filename);
+              const fileBuffer = await fs.readFile(filePath);
+              base64File = fileBuffer.toString('base64');
+              console.log(`📥 [WebSocket] Arquivo lido do servidor e convertido para base64: ${filename}`);
+            } catch (fileError: any) {
+              console.error(`❌ [WebSocket] Erro ao ler arquivo do servidor: ${fileError.message}`);
+              throw new Error(`Arquivo não encontrado no servidor: ${filename}. Não é possível enviar sem base64.`);
             }
           }
           
@@ -1033,84 +1025,25 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                 throw mediaError;
               }
             }
-          } else if (data.mediaUrl) {
-            // Se não tem base64 e tem mediaUrl, tentar ler do servidor novamente (fallback)
-            // Se não conseguir ler, não tentar URL (Evolution API não aceita URLs privadas)
-            if (!filePath) {
-              // Tentar novamente encontrar o arquivo
-              if (data.mediaUrl.startsWith('/media/')) {
-                const filename = data.mediaUrl.replace('/media/', '');
-                try {
-                  filePath = await this.mediaService.getFilePath(filename);
-                  const fileBuffer = await fs.readFile(filePath);
-                  base64File = fileBuffer.toString('base64');
-                  
-                  // Agora que temos base64, tentar enviar
-                  payload.base64 = base64File;
-                  console.log(`📤 [WebSocket] Enviando mídia via base64 (lido do servidor) para ${cleanPhone} via linha ${line.phone}`);
-                  apiResponse = await axios.post(
-                    `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
-                    payload,
-                    {
-                      headers: { 'apikey': evolution.evolutionKey },
-                      timeout: 30000,
-                    }
-                  );
-                  console.log(`✅ [WebSocket] Mídia enviada com sucesso (base64 do servidor)`);
-                } catch (fileError: any) {
-                  throw new Error(`Arquivo não encontrado no servidor: ${filename}. A Evolution API requer base64 ou URL pública acessível.`);
-                }
-              } else if (data.mediaUrl.startsWith('http')) {
-                // URL externa - tentar enviar diretamente (pode funcionar se for URL pública)
-                const appUrl = process.env.APP_URL || 'https://api.newvend.taticamarketing.com.br';
-                if (data.mediaUrl.startsWith(appUrl)) {
-                  // É do nosso servidor mas não encontrou o arquivo - erro
-                  throw new Error(`Arquivo não encontrado no servidor. A Evolution API requer base64 ou URL pública acessível.`);
-                } else {
-                  // URL externa - tentar enviar (pode funcionar)
-                  payload.mediaUrl = data.mediaUrl;
-                  console.log(`📤 [WebSocket] Enviando mídia via URL externa para ${cleanPhone} via linha ${line.phone}`);
-                  apiResponse = await axios.post(
-                    `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
-                    payload,
-                    {
-                      headers: { 'apikey': evolution.evolutionKey },
-                      timeout: 30000,
-                    }
-                  );
-                  console.log(`✅ [WebSocket] Mídia enviada com sucesso (URL externa)`);
-                }
-              } else {
-                throw new Error(`Arquivo não encontrado. A Evolution API requer base64 ou URL pública acessível.`);
+          } else if (data.mediaUrl && !isOurServer) {
+            // URL externa - tentar enviar diretamente (pode funcionar se for URL pública)
+            payload.mediaUrl = data.mediaUrl;
+            console.log(`📤 [WebSocket] Enviando mídia via URL externa para ${cleanPhone} via linha ${line.phone}`);
+            apiResponse = await axios.post(
+              `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
+              payload,
+              {
+                headers: { 'apikey': evolution.evolutionKey },
+                timeout: 30000,
               }
-            } else {
-              // Se filePath existe mas base64File não foi criado, tentar ler novamente
-              try {
-                const fileBuffer = await fs.readFile(filePath);
-                base64File = fileBuffer.toString('base64');
-                payload.base64 = base64File;
-                console.log(`📤 [WebSocket] Enviando mídia via base64 (lido do servidor) para ${cleanPhone} via linha ${line.phone}`);
-                apiResponse = await axios.post(
-                  `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
-                  payload,
-                  {
-                    headers: { 'apikey': evolution.evolutionKey },
-                    timeout: 30000,
-                  }
-                );
-                console.log(`✅ [WebSocket] Mídia enviada com sucesso (base64 do servidor)`);
-              } catch (fileError: any) {
-                throw new Error(`Erro ao ler arquivo do servidor: ${fileError.message}`);
-              }
-            }
+            );
+            console.log(`✅ [WebSocket] Mídia enviada com sucesso (URL externa)`);
           } else {
-            throw new Error('Nenhum arquivo fornecido (base64, mediaBase64 ou mediaUrl)');
+            // Se chegou aqui e não tem base64 nem URL externa válida, erro
+            throw new Error('Nenhum arquivo fornecido ou não foi possível converter para base64. A Evolution API requer base64 ou URL pública acessível.');
           }
           
-          // Limpar arquivo temporário se foi criado
-          if (filePath && filePath.includes('temp-')) {
-            await fs.unlink(filePath).catch(() => {}); // Ignorar erros de limpeza
-          }
+          // Limpar arquivos temporários não é necessário aqui - os arquivos são gerenciados pelo MediaService
         } catch (mediaError: any) {
           // Log detalhado do erro
           console.error('❌ [WebSocket] Erro ao enviar documento:', {
