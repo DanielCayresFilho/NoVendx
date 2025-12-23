@@ -151,6 +151,7 @@ model LinesStock {
   businessID    String?
   numberId      String?
   receiveMedia  Boolean    @default(false) // Se true, ativa webhook_base64 para receber imagens/áudios/docs
+  isReserve     Boolean    @default(false) // Se true, linha é reservada (aceita apenas 1 operador)
   createdBy     Int? // ID do usuário que criou a linha (para rastrear produtividade dos ativadores)
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
@@ -164,6 +165,7 @@ model LinesStock {
   @@index([linkedTo])
   @@index([evolutionName])
   @@index([createdBy])
+  @@index([isReserve])
 }
 
 // Tabela de relacionamento entre Linhas e Operadores (máximo 2 operadores por linha)
@@ -409,4 +411,40 @@ model SystemEvent {
   @@index([userId])
   @@index([severity])
   @@index([createdAt])
+}
+
+// Fila de espera para operadores sem linha disponível
+model OperatorQueue {
+  id             Int       @id @default(autoincrement())
+  userId         Int
+  segmentId      Int?
+  status         String    @default("waiting") // waiting, assigned, expired
+  priority       Int       @default(0) // Prioridade (maior = mais urgente)
+  createdAt      DateTime  @default(now())
+  assignedAt     DateTime?
+  expiresAt      DateTime?
+  assignedLineId Int?
+
+  @@unique([userId, status])
+  @@index([status, priority, createdAt])
+  @@index([segmentId])
+  @@index([userId])
+}
+
+// Histórico de disponibilidade de linhas para análise e alertas
+model LineAvailabilityLog {
+  id                      Int      @id @default(autoincrement())
+  timestamp               DateTime @default(now())
+  totalActiveLines        Int
+  linesWithZeroOperators  Int
+  linesWithOneOperator    Int
+  linesWithTwoOperators   Int
+  operatorsOnline         Int
+  operatorsWithoutLine    Int
+  operatorsInQueue        Int
+  availabilityPercent     Decimal  @db.Decimal(5, 2)
+  severity                String   @default("INFO") // INFO, WARNING, CRITICAL
+
+  @@index([timestamp])
+  @@index([severity])
 }

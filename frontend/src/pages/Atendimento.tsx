@@ -590,6 +590,45 @@ export default function Atendimento() {
   const handleFileUpload = useCallback(async (file: File) => {
     if (!selectedConversation || isUploadingFile) return;
 
+    // Validações de arquivo
+    const MAX_FILE_SIZE = 16 * 1024 * 1024; // 16MB
+    const ALLOWED_TYPES = [
+      'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+      'video/mp4', 'video/mpeg', 'video/quicktime',
+      'audio/mpeg', 'audio/ogg', 'audio/mp4', 'audio/wav',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'text/plain',
+      'text/csv',
+    ];
+
+    // Validar tamanho
+    if (file.size > MAX_FILE_SIZE) {
+      playErrorSound();
+      toast({
+        title: "Arquivo muito grande",
+        description: `O arquivo não pode ser maior que ${Math.round(MAX_FILE_SIZE / 1024 / 1024)}MB. Tamanho atual: ${(file.size / 1024 / 1024).toFixed(2)}MB`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validar tipo
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      playErrorSound();
+      toast({
+        title: "Tipo de arquivo não permitido",
+        description: `Tipos permitidos: Imagens, Vídeos, Áudios, PDF, Word, Excel, PowerPoint, TXT, CSV`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsUploadingFile(true);
     try {
       const formData = new FormData();

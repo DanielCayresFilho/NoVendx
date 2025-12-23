@@ -1012,13 +1012,20 @@ export class LinesService {
         throw new BadRequestException(`Linha da evolution '${line.evolutionName}' não está ativa para atribuição`);
       }
 
-      // Verificar se a linha já tem 2 operadores (com lock)
+      // Verificar se a linha já tem o máximo de operadores (com lock)
+      // Linhas reserva aceitam apenas 1 operador, linhas normais aceitam 2
       const currentOperators = await tx.lineOperator.count({
         where: { lineId },
       });
 
-      if (currentOperators >= 2) {
-        throw new BadRequestException('Linha já possui o máximo de 2 operadores vinculados');
+      const maxOperators = line.isReserve ? 1 : 2;
+
+      if (currentOperators >= maxOperators) {
+        throw new BadRequestException(
+          line.isReserve
+            ? 'Linha reserva já possui 1 operador vinculado (máximo permitido)'
+            : 'Linha já possui o máximo de 2 operadores vinculados'
+        );
       }
 
       // Verificar se o operador já está vinculado a esta linha

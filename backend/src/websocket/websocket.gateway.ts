@@ -28,6 +28,7 @@ import { MessageSendingService } from '../message-sending/message-sending.servic
 import { AppLoggerService } from '../logger/logger.service';
 import { TemplatesService } from '../templates/templates.service';
 import { TemplateVariableDto } from '../templates/dto/send-template.dto';
+import { OperatorQueueService } from '../operator-queue/operator-queue.service';
 import axios from 'axios';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -74,6 +75,8 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     private messageSendingService: MessageSendingService,
     private logger: AppLoggerService,
     private templatesService: TemplatesService,
+    @Inject(forwardRef(() => OperatorQueueService))
+    private queueService: OperatorQueueService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -312,8 +315,10 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
             // Verificar se ainda não tem linha após todas as tentativas
             if (!user.line) {
               console.error(`❌ [WebSocket] Nenhuma linha disponível para o operador ${user.name} após todas as tentativas`);
-              // Notificação removida - operador não precisa saber
-              // Nota: Fila de espera será implementada futuramente se necessário
+
+              // Adicionar operador à fila de espera
+              await this.queueService.addToQueue(user.id, user.segment || null, 0);
+              console.log(`📋 [WebSocket] Operador ${user.name} adicionado à fila de espera`);
             }
           }
         }
@@ -957,38 +962,36 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               const filename = urlPath.replace('/media/', '');
               filePath = await this.mediaService.getFilePath(filename);
             } else {
-              // URL externa - baixar temporariamente
-              let tempPath: string | null = null;
-              try {
-                const response = await axios.get(data.mediaUrl, { 
-                  responseType: 'arraybuffer',
-                  timeout: 30000, // 30 segundos
-                });
-                tempPath = path.join('./uploads', `temp-${Date.now()}-${cleanFileName}`);
-              await fs.mkdir('./uploads', { recursive: true });
-              await fs.writeFile(tempPath, response.data);
-              filePath = tempPath;
-              } finally {
-                // Limpar arquivo temporário após uso (se ainda existir)
-                if (tempPath) {
-                  try {
-                    await fs.unlink(tempPath).catch(() => {
-                      // Ignorar erro se arquivo já foi deletado
-                    });
-                  } catch (error) {
-                    // Ignorar erro
-                  }
-                }
-              }
+              // URL externa - usar a URL diretamente na Evolution API (não precisa baixar)
+              // A Evolution API aceita URLs externas diretamente
+              // Não definir filePath, vai usar a URL diretamente
+              filePath = null;
             }
           } else {
             // Assumir que é um caminho relativo
-            filePath = path.join('./uploads', data.mediaUrl.replace(/^\/media\//, ''));
+            const relativePath = data.mediaUrl.replace(/^\/media\//, '');
+            filePath = path.join('./uploads', relativePath);
+            
+            // Verificar se o arquivo existe antes de tentar ler
+            try {
+              await fs.access(filePath);
+            } catch {
+              console.error(`❌ [WebSocket] Arquivo não encontrado: ${filePath}`);
+              throw new Error(`Arquivo não encontrado: ${relativePath}`);
+            }
           }
 
-          // Ler arquivo e converter para base64
-          const fileBuffer = await fs.readFile(filePath);
-          const base64File = fileBuffer.toString('base64');
+          // Ler arquivo e converter para base64 (apenas se filePath foi definido)
+          let base64File: string | null = null;
+          if (filePath) {
+            try {
+              const fileBuffer = await fs.readFile(filePath);
+              base64File = fileBuffer.toString('base64');
+            } catch (fileError: any) {
+              console.error(`❌ [WebSocket] Erro ao ler arquivo ${filePath}:`, fileError.message);
+              throw new Error(`Erro ao ler arquivo: ${fileError.message}`);
+            }
+          }
           
           // Determinar mimetype baseado na extensão
           const getMimeType = (filename: string): string => {
@@ -1369,7 +1372,16 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                 filePath = tempPath;
               }
             } else {
-              filePath = path.join('./uploads', data.mediaUrl.replace(/^\/media\//, ''));
+              const relativePath = data.mediaUrl.replace(/^\/media\//, '');
+              filePath = path.join('./uploads', relativePath);
+              
+              // Verificar se o arquivo existe antes de tentar ler
+              try {
+                await fs.access(filePath);
+              } catch {
+                console.error(`❌ [WebSocket] Arquivo não encontrado na recuperação: ${filePath}`);
+                throw new Error(`Arquivo não encontrado: ${relativePath}`);
+              }
             }
             
             const fileBuffer = await fs.readFile(filePath);
@@ -1608,7 +1620,18 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
           // Filtrar por evolutions ativas
           const filteredDefaultLines = await this.controlPanelService.filterLinesByActiveEvolutions(defaultLines, userSegment);
-          availableLine = await this.findAvailableLineForOperator(filteredDefaultLines, userId, userSegment);
+          
+          // Buscar linha disponível manualmente (sem usar findAvailableLineForOperator que pode ser muito restritivo)
+          for (const line of filteredDefaultLines) {
+            const operatorsCount = await (this.prisma as any).lineOperator.count({
+              where: { lineId: line.id },
+            });
+            
+            if (operatorsCount < 2) {
+              availableLine = line;
+              break;
+            }
+          }
 
           // Se encontrou linha padrão e operador tem segmento, atualizar o segmento da linha
           if (availableLine && userSegment) {
@@ -1620,7 +1643,41 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         }
       }
 
+      // 3. ÚLTIMA TENTATIVA: Se ainda não encontrou, buscar QUALQUER linha ativa com menos de 2 operadores (ignorando segmento)
       if (!availableLine) {
+        console.log(`🔄 [WebSocket] Realocação: Buscando qualquer linha ativa disponível...`);
+        const anyActiveLines = await this.prisma.linesStock.findMany({
+          where: {
+            lineStatus: 'active',
+          },
+        });
+
+        // Filtrar por evolutions ativas
+        const filteredAnyLines = await this.controlPanelService.filterLinesByActiveEvolutions(anyActiveLines, userSegment || undefined);
+
+        // Buscar QUALQUER linha com menos de 2 operadores
+        for (const line of filteredAnyLines) {
+          const operatorsCount = await (this.prisma as any).lineOperator.count({
+            where: { lineId: line.id },
+          });
+          
+          if (operatorsCount < 2) {
+            availableLine = line;
+            console.log(`✅ [WebSocket] Realocação: Linha ${line.phone} encontrada (busca ampla)`);
+            break;
+          }
+        }
+      }
+
+      if (!availableLine) {
+        const totalActiveLines = await this.prisma.linesStock.count({ where: { lineStatus: 'active' } });
+        const linesWithoutOperators = await this.prisma.linesStock.count({
+          where: {
+            lineStatus: 'active',
+            operators: { none: {} },
+          },
+        });
+        console.error(`❌ [WebSocket] Realocação: Nenhuma linha disponível. Total ativas: ${totalActiveLines}, Sem operadores: ${linesWithoutOperators}`);
         return { success: false, reason: 'Nenhuma linha disponível' };
       }
 
