@@ -945,90 +945,62 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         };
         
         try {
-          // PRIORIDADE 1: Base64 do cliente (direto, sem ler do servidor)
+          // OPERADOR envia documentos: sempre ler arquivo do servidor e converter para base64
           let base64File: string | null = data.base64 || data.mediaBase64 || null;
           
-          // Se não veio base64 do cliente E tem mediaUrl, SEMPRE tentar ler do servidor se for nosso servidor
+          // Se operador enviou mediaUrl do nosso servidor, SEMPRE ler arquivo e converter para base64
           const appUrl = process.env.APP_URL || 'https://api.newvend.taticamarketing.com.br';
           const isOurServer = data.mediaUrl && (
             data.mediaUrl.startsWith('/media/') || 
-            data.mediaUrl.startsWith(appUrl)
+            (data.mediaUrl.startsWith('http') && data.mediaUrl.startsWith(appUrl))
           );
           
-          if (!base64File && data.mediaUrl && isOurServer) {
-            // É do nosso servidor - SEMPRE ler arquivo e converter para base64
-            let filename: string;
-            
-            if (data.mediaUrl.startsWith('/media/')) {
-              filename = data.mediaUrl.replace('/media/', '');
-            } else {
-              // URL completa do nosso servidor
-              const urlPath = new URL(data.mediaUrl).pathname;
-              filename = urlPath.replace('/media/', '');
-            }
-            
-            try {
-              const filePath = await this.mediaService.getFilePath(filename);
-              const fileBuffer = await fs.readFile(filePath);
-              base64File = fileBuffer.toString('base64');
-              console.log(`📥 [WebSocket] Arquivo lido do servidor e convertido para base64: ${filename}`);
-            } catch (fileError: any) {
-              console.error(`❌ [WebSocket] Erro ao ler arquivo do servidor: ${fileError.message}`);
-              throw new Error(`Arquivo não encontrado no servidor: ${filename}. Não é possível enviar sem base64.`);
+          if (!base64File && data.mediaUrl) {
+            if (isOurServer) {
+              // É do nosso servidor - SEMPRE ler arquivo e converter para base64
+              let filename: string;
+              
+              if (data.mediaUrl.startsWith('/media/')) {
+                filename = data.mediaUrl.replace('/media/', '');
+              } else {
+                // URL completa do nosso servidor
+                const urlPath = new URL(data.mediaUrl).pathname;
+                filename = urlPath.replace('/media/', '');
+              }
+              
+              try {
+                const filePath = await this.mediaService.getFilePath(filename);
+                const fileBuffer = await fs.readFile(filePath);
+                base64File = fileBuffer.toString('base64');
+                console.log(`📥 [WebSocket] Arquivo lido do servidor e convertido para base64: ${filename} (${(fileBuffer.length / 1024).toFixed(2)} KB)`);
+              } catch (fileError: any) {
+                console.error(`❌ [WebSocket] Erro ao ler arquivo do servidor: ${fileError.message}`);
+                throw new Error(`Arquivo não encontrado no servidor: ${filename}. Verifique se o upload foi realizado corretamente.`);
+              }
             }
           }
           
-          // Estratégia: Priorizar base64, depois URL
+          // OPERADOR enviando documento: SEMPRE usar base64 (do operador ou lido do servidor)
           const cleanPhone = data.contactPhone.replace(/\D/g, '');
+          
+          if (!base64File || typeof base64File !== 'string') {
+            throw new Error('Não foi possível obter o arquivo em base64. Verifique se o upload foi realizado corretamente.');
+          }
+          
           let payload: any = {
             number: cleanPhone,
             mediatype: getMediaType(cleanFileName),
             fileName: cleanFileName,
+            base64: base64File,
           };
           
           if (data.message && data.message.trim()) {
             payload.caption = data.message;
           }
           
-          // Tentar com base64 primeiro (mais confiável)
-          if (base64File && typeof base64File === 'string') {
-            payload.base64 = base64File;
-            
-            try {
-              console.log(`📤 [WebSocket] Enviando mídia via base64 para ${cleanPhone} via linha ${line.phone}`);
-              apiResponse = await axios.post(
-                `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
-                payload,
-                {
-                  headers: { 'apikey': evolution.evolutionKey },
-                  timeout: 30000,
-                }
-              );
-              console.log(`✅ [WebSocket] Mídia enviada com sucesso (base64)`);
-            } catch (base64Error: any) {
-              // Se base64 falhar, tentar com campo "media"
-              delete payload.base64;
-              payload.media = base64File;
-              
-              try {
-                console.log(`📤 [WebSocket] Tentando enviar mídia via campo "media"...`);
-                apiResponse = await axios.post(
-                  `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
-                  payload,
-                  {
-                    headers: { 'apikey': evolution.evolutionKey },
-                    timeout: 30000,
-                  }
-                );
-                console.log(`✅ [WebSocket] Mídia enviada com sucesso (campo media)`);
-              } catch (mediaError: any) {
-                throw mediaError;
-              }
-            }
-          } else if (data.mediaUrl && !isOurServer) {
-            // URL externa - tentar enviar diretamente (pode funcionar se for URL pública)
-            payload.mediaUrl = data.mediaUrl;
-            console.log(`📤 [WebSocket] Enviando mídia via URL externa para ${cleanPhone} via linha ${line.phone}`);
+          // Tentar enviar com base64 primeiro
+          try {
+            console.log(`📤 [WebSocket] OPERADOR enviando documento via base64 para ${cleanPhone} via linha ${line.phone}`);
             apiResponse = await axios.post(
               `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
               payload,
@@ -1037,10 +1009,26 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                 timeout: 30000,
               }
             );
-            console.log(`✅ [WebSocket] Mídia enviada com sucesso (URL externa)`);
-          } else {
-            // Se chegou aqui e não tem base64 nem URL externa válida, erro
-            throw new Error('Nenhum arquivo fornecido ou não foi possível converter para base64. A Evolution API requer base64 ou URL pública acessível.');
+            console.log(`✅ [WebSocket] Documento enviado com sucesso (base64)`);
+          } catch (base64Error: any) {
+            // Se base64 falhar, tentar com campo "media"
+            delete payload.base64;
+            payload.media = base64File;
+            
+            try {
+              console.log(`📤 [WebSocket] Tentando enviar documento via campo "media"...`);
+              apiResponse = await axios.post(
+                `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
+                payload,
+                {
+                  headers: { 'apikey': evolution.evolutionKey },
+                  timeout: 30000,
+                }
+              );
+              console.log(`✅ [WebSocket] Documento enviado com sucesso (campo media)`);
+            } catch (mediaError: any) {
+              throw mediaError;
+            }
           }
           
           // Limpar arquivos temporários não é necessário aqui - os arquivos são gerenciados pelo MediaService
