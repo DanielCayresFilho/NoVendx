@@ -939,30 +939,25 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         // Erro no health check não deve bloquear envio (pode ser problema temporário da API)
       }
 
-      // Função auxiliar para detectar erro de conexão
-      const isConnectionError = (error: any): boolean => {
-        const errorMessage = error?.response?.data?.message || error?.message || '';
-        const errorData = error?.response?.data;
-        return (
-          errorMessage.includes('Connection Closed') ||
-          errorMessage.includes('connection closed') ||
-          errorMessage.includes('CONNECTION_CLOSED') ||
-          (errorData?.response?.message && Array.isArray(errorData.response.message) && 
-           errorData.response.message.some((msg: string) => 
-             msg.includes('Connection Closed') || msg.includes('connection closed')
-           ))
-        );
-      };
-
-      // Função auxiliar para tentar realocar linha e reenviar
-      const tryReallocateAndResend = async (sendFunction: () => Promise<any>): Promise<any> => {
-        try {
-          return await sendFunction();
-        } catch (error: any) {
-          if (isConnectionError(error)) {
-            console.warn(`⚠️ [WebSocket] Linha ${currentLineId} desconectada. Realocando linha para operador ${user.name}...`);
+      // Função auxiliar para tentar realocar linha e reenviar (para QUALQUER erro)
+      const tryReallocateAndResend = async (sendFunction: () => Promise<any>, maxRetries: number = 3): Promise<any> => {
+        let attempt = 0;
+        let lastError: any = null;
+        
+        while (attempt < maxRetries) {
+          try {
+            return await sendFunction();
+          } catch (error: any) {
+            lastError = error;
+            attempt++;
             
-            // Realocar nova linha
+            console.warn(`⚠️ [WebSocket] Erro ao enviar (tentativa ${attempt}/${maxRetries}). Linha ${currentLineId}. Realocando linha para operador ${user.name}...`);
+            console.warn(`⚠️ [WebSocket] Erro:`, {
+              status: error.response?.status,
+              message: error.response?.data?.message || error.message,
+            });
+            
+            // Realocar nova linha para QUALQUER erro
             const reallocationResult = await this.lineAssignmentService.reallocateLineForOperator(user.id, user.segment, currentLineId);
             
             if (reallocationResult.success && reallocationResult.lineId && reallocationResult.lineId !== currentLineId) {
@@ -988,20 +983,22 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                 if (newEvolution) {
                   evolution = newEvolution;
                   instanceName = newInstanceName;
-                  console.log(`✅ [WebSocket] Linha realocada: ${line?.phone} → ${newLine.phone}. Tentando reenviar...`);
+                  console.log(`✅ [WebSocket] Linha realocada: ${line?.phone} → ${newLine.phone}. Tentando reenviar (tentativa ${attempt + 1}/${maxRetries})...`);
                   
-                  // Tentar enviar novamente com nova linha
-                  return await sendFunction();
+                  // Continuar o loop para tentar novamente com a nova linha
+                  continue;
                 }
               }
             }
             
-            throw new Error('Linha desconectada e não foi possível realocar uma nova linha');
+            // Se não conseguiu realocar ou já tentou todas as vezes, lançar erro
+            if (attempt >= maxRetries) {
+              throw new Error(`Não foi possível enviar após ${maxRetries} tentativas com realocação de linha. Último erro: ${lastError?.response?.data?.message || lastError?.message || 'Erro desconhecido'}`);
+            }
           }
-          
-          // Se não for erro de conexão, propagar o erro
-          throw error;
         }
+        
+        throw lastError || new Error('Erro desconhecido ao tentar enviar');
       };
 
       // Enviar mensagem via Evolution API
@@ -1174,30 +1171,28 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
                 }
               );
             } catch (sendError: any) {
-              // Se falhar com URL, tentar com base64 puro (apenas se não for erro de conexão)
-              if (!isConnectionError(sendError)) {
-                console.log(`🔄 [WebSocket] Tentando com base64 puro...`);
-                currentPayload.media = base64File;
-                
-                try {
-                  return await axios.post(
-                    `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
-                    currentPayload,
-                    {
-                      headers: {
-                        'apikey': evolution.evolutionKey,
-                        'Content-Type': 'application/json',
-                      },
-                      timeout: 60000,
-                      maxContentLength: Infinity,
-                      maxBodyLength: Infinity,
-                    }
-                  );
-                } catch (base64Error: any) {
-                  throw base64Error;
-                }
+              // Se falhar com URL, tentar com base64 puro antes de propagar erro
+              console.log(`🔄 [WebSocket] Tentando com base64 puro...`);
+              currentPayload.media = base64File;
+              
+              try {
+                return await axios.post(
+                  `${evolution.evolutionUrl}/message/sendMedia/${instanceName}`,
+                  currentPayload,
+                  {
+                    headers: {
+                      'apikey': evolution.evolutionKey,
+                      'Content-Type': 'application/json',
+                    },
+                    timeout: 60000,
+                    maxContentLength: Infinity,
+                    maxBodyLength: Infinity,
+                  }
+                );
+              } catch (base64Error: any) {
+                // Se base64 também falhar, propagar o erro original para tentar realocação
+                throw sendError;
               }
-              throw sendError;
             }
           };
 
