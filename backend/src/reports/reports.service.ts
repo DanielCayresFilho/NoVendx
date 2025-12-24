@@ -1342,10 +1342,12 @@ export class ReportsService {
 
   /**
    * RELATÓRIO DE LINHAS
-   * Estrutura: id, Número, Status, Segmento, Operador Vinculado, Data de Cadastro, Data de Atualização
+   * Estrutura: Número, Status, Segmento, Operador Vinculado, Data de Cadastro, Data de Última Movimentação
    * Opções:
-   * - onlyMovimentedLines = false/undefined: Todas as linhas (mostra data cadastro e atualização)
-   * - onlyMovimentedLines = true: Apenas linhas movimentadas (com conversas/campanhas no período ou mudança de status)
+   * - onlyMovimentedLines = false/undefined: Todas as linhas (mostra data cadastro e última movimentação)
+   * - onlyMovimentedLines = true: Apenas linhas movimentadas (com conversas/campanhas no período)
+   * 
+   * IMPORTANTE: Traz TODAS as linhas (incluindo segmento "Padrão") para que o total bata com o esperado
    */
   async getLinhasReport(filters: ReportFilterDto, userIdentifier?: 'cliente' | 'proprietario') {
     console.log('[Reports] getLinhasReport - Filtros recebidos:', {
@@ -1357,35 +1359,23 @@ export class ReportsService {
 
     const whereClause: any = {};
 
-    // Excluir linhas de segmento padrão
-    const defaultSegment = await this.prisma.segment.findUnique({
-      where: { name: 'Padrão' },
-    });
-    
-    // Se houver filtro de segmento, usar esse segmento (mas ainda excluir padrão se for o caso)
+    // NÃO excluir linhas de segmento "Padrão" - queremos TODAS as linhas
+    // Se houver filtro de segmento, usar esse segmento
     if (filters.segment) {
-      // Se o filtro for o segmento padrão, não retornar nada
-      if (defaultSegment && filters.segment === defaultSegment.id) {
-        return [];
-      }
       whereClause.segment = filters.segment;
-    } else {
-      // Se não houver filtro de segmento, excluir apenas o padrão
-      if (defaultSegment) {
-        whereClause.segment = {
-          not: defaultSegment.id,
-        };
-      }
     }
+    // Se não houver filtro de segmento, trazer TODAS as linhas (sem excluir padrão)
 
     // Aplicar filtro de identificador
     const finalWhereClause = await this.applyIdentifierFilter(whereClause, userIdentifier, 'line');
 
-    // Buscar todas as linhas com filtros de segmento
+    // Buscar TODAS as linhas (sem excluir segmento padrão)
     let lines = await this.prisma.linesStock.findMany({
       where: finalWhereClause,
       orderBy: { createdAt: 'asc' },
     });
+
+    console.log(`[Reports] Total de linhas encontradas antes de filtrar movimentadas: ${lines.length}`);
 
     // Se onlyMovimentedLines = true, filtrar apenas linhas que foram movimentadas
     if (filters.onlyMovimentedLines === true) {
@@ -1448,10 +1438,10 @@ export class ReportsService {
     const segments = await this.prisma.segment.findMany();
     const segmentMap = new Map(segments.map(s => [s.id, s]));
 
-    // Buscar TODOS os operadores vinculados via LineOperator (sem filtrar por data ainda)
-    const lineIds = lines.map(l => l.id);
+    // Buscar TODOS os operadores vinculados via LineOperator
+    const lineIdsArray = lines.map(l => l.id);
     const lineOperatorsQuery: any = {
-      lineId: { in: lineIds },
+      lineId: { in: lineIdsArray },
       user: {
         email: {
           endsWith: '@paschoalotto.com.br',
@@ -1459,7 +1449,7 @@ export class ReportsService {
       },
     };
 
-    // Buscar TODOS os lineOperators primeiro (sem filtro de data)
+    // Buscar TODOS os lineOperators
     const allLineOperators = await (this.prisma as any).lineOperator.findMany({
       where: lineOperatorsQuery,
       include: {
@@ -1472,49 +1462,84 @@ export class ReportsService {
         },
       },
       orderBy: {
-        createdAt: 'asc', // Primeira atribuição primeiro
+        createdAt: 'asc',
       },
     });
 
-    // Preparar datas de filtro (se houver)
-    let filterStartDate: Date | null = null;
-    let filterEndDate: Date | null = null;
-    
-    if (filters.startDate) {
-      // Validar formato da data (YYYY-MM-DD)
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(filters.startDate)) {
-        console.error('[Reports] Formato de startDate inválido:', filters.startDate);
-        throw new Error('Formato de data inicial inválido. Use YYYY-MM-DD');
-      }
-      // Criar data no timezone local para evitar problemas de UTC
-      const [year, month, day] = filters.startDate.split('-').map(Number);
-      filterStartDate = new Date(year, month - 1, day, 0, 0, 0, 0);
-      console.log('[Reports] Filtro startDate aplicado:', {
-        original: filters.startDate,
-        parsed: filterStartDate.toISOString(),
-        local: filterStartDate.toLocaleString('pt-BR'),
-      });
-    }
-    
-    if (filters.endDate) {
-      // Validar formato da data (YYYY-MM-DD)
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(filters.endDate)) {
-        console.error('[Reports] Formato de endDate inválido:', filters.endDate);
-        throw new Error('Formato de data final inválido. Use YYYY-MM-DD');
-      }
-      // Criar data no timezone local para evitar problemas de UTC
-      const [year, month, day] = filters.endDate.split('-').map(Number);
-      filterEndDate = new Date(year, month - 1, day, 23, 59, 59, 999);
-      console.log('[Reports] Filtro endDate aplicado:', {
-        original: filters.endDate,
-        parsed: filterEndDate.toISOString(),
-        local: filterEndDate.toLocaleString('pt-BR'),
-      });
-    }
+    // Buscar última movimentação de cada linha (última conversa, última campanha, ou última mudança de status)
+    // Buscar última conversa de cada linha
+    const lastConversations = await this.prisma.conversation.findMany({
+      where: {
+        userLine: { in: lineIdsArray },
+        isAdminTest: false,
+      },
+      select: {
+        userLine: true,
+        datetime: true,
+      },
+      orderBy: {
+        datetime: 'desc',
+      },
+    });
 
-    // Agrupar operadores por linha e pegar a primeira data de atribuição
+    // Buscar última campanha de cada linha
+    const lastCampaigns = await this.prisma.campaign.findMany({
+      where: {
+        lineReceptor: { in: lineIdsArray },
+        isAdminTest: false,
+      },
+      select: {
+        lineReceptor: true,
+        dateTime: true,
+      },
+      orderBy: {
+        dateTime: 'desc',
+      },
+    });
+
+    // Mapear última movimentação por linha (conversa OU campanha - a mais recente)
+    const lastMovementByLine = new Map<number, Date>();
+    
+    // Processar conversas (pegar a mais recente de cada linha)
+    const lastConvByLine = new Map<number, Date>();
+    lastConversations.forEach(conv => {
+      if (conv.userLine) {
+        const currentLast = lastConvByLine.get(conv.userLine);
+        if (!currentLast || conv.datetime > currentLast) {
+          lastConvByLine.set(conv.userLine, conv.datetime);
+        }
+      }
+    });
+
+    // Processar campanhas (pegar a mais recente de cada linha)
+    const lastCampByLine = new Map<number, Date>();
+    lastCampaigns.forEach(camp => {
+      if (camp.lineReceptor) {
+        const currentLast = lastCampByLine.get(camp.lineReceptor);
+        if (!currentLast || camp.dateTime > currentLast) {
+          lastCampByLine.set(camp.lineReceptor, camp.dateTime);
+        }
+      }
+    });
+
+    // Combinar conversas e campanhas - pegar a mais recente entre as duas
+    lineIdsArray.forEach(lineId => {
+      const lastConv = lastConvByLine.get(lineId);
+      const lastCamp = lastCampByLine.get(lineId);
+      
+      if (lastConv && lastCamp) {
+        // Pegar a mais recente entre conversa e campanha
+        lastMovementByLine.set(lineId, lastConv > lastCamp ? lastConv : lastCamp);
+      } else if (lastConv) {
+        lastMovementByLine.set(lineId, lastConv);
+      } else if (lastCamp) {
+        lastMovementByLine.set(lineId, lastCamp);
+      }
+      // Se não tem nem conversa nem campanha, não adiciona ao mapa (última movimentação será updatedAt)
+    });
+
+    // Agrupar operadores por linha
     const operatorsByLine = new Map<number, Array<{ user: any; createdAt: Date }>>();
-    const firstTransferDateByLine = new Map<number, Date>();
     
     allLineOperators.forEach((lo: any) => {
       if (!operatorsByLine.has(lo.lineId)) {
@@ -1524,32 +1549,10 @@ export class ReportsService {
         user: lo.user,
         createdAt: lo.createdAt,
       });
-      
-      // Guardar a primeira data de transferência (atribuição mais antiga) de TODAS as atribuições
-      if (!firstTransferDateByLine.has(lo.lineId) || 
-          lo.createdAt < firstTransferDateByLine.get(lo.lineId)!) {
-        firstTransferDateByLine.set(lo.lineId, lo.createdAt);
-      }
     });
 
-    // Se onlyMovimentedLines = false/undefined, mostrar TODAS as linhas (apenas aplicar filtro de data se houver)
-    // Se onlyMovimentedLines = true, já filtramos acima para mostrar apenas movimentadas
-    
+    // Não filtrar por data quando onlyMovimentedLines = false - mostrar TODAS as linhas
     let filteredLines = lines;
-    
-    // Aplicar filtro de data apenas se não for onlyMovimentedLines (pois já filtramos por movimento acima)
-    if ((filterStartDate || filterEndDate) && filters.onlyMovimentedLines !== true) {
-      filteredLines = lines.filter(line => {
-        // Verificar se createdAt ou updatedAt está no período
-        const createdInPeriod = !filterStartDate || line.createdAt >= filterStartDate;
-        const createdBeforeEnd = !filterEndDate || line.createdAt <= filterEndDate;
-        const updatedInPeriod = !filterStartDate || line.updatedAt >= filterStartDate;
-        const updatedBeforeEnd = !filterEndDate || line.updatedAt <= filterEndDate;
-        
-        // Incluir se criada ou atualizada no período
-        return (createdInPeriod && createdBeforeEnd) || (updatedInPeriod && updatedBeforeEnd);
-      });
-    }
 
     const result = filteredLines.map(line => {
       const segment = line.segment ? segmentMap.get(line.segment) : null;
@@ -1558,30 +1561,35 @@ export class ReportsService {
       const operators = operatorsByLine.get(line.id) || [];
       const operatorNames = operators.map((op: any) => op.user.name).join(', ') || null;
 
-      // Se onlyMovimentedLines = true, usar data de primeira movimentação ou updatedAt
-      // Se onlyMovimentedLines = false/undefined, mostrar createdAt e updatedAt
+      // Última movimentação: última conversa/campanha OU updatedAt (mudança de status, ex: banida)
+      const lastMovement = lastMovementByLine.get(line.id);
+      const lastActivity = lastMovement && lastMovement > line.updatedAt 
+        ? lastMovement 
+        : line.updatedAt; // Se não tem movimento, usar updatedAt (quando foi banida ou atualizada)
+
+      // Se onlyMovimentedLines = true, já filtramos acima - mostrar data de movimentação
+      // Se onlyMovimentedLines = false/undefined, mostrar data de cadastro e última movimentação
       if (filters.onlyMovimentedLines === true) {
-        const transferDate = firstTransferDateByLine.get(line.id) || line.updatedAt;
         return {
           Carteira: this.normalizeText(segment?.name) || 'Sem segmento',
           Número: line.phone,
           Status: line.lineStatus === 'ban' ? 'Banida' : line.lineStatus === 'active' ? 'Ativa' : 'Desconhecido',
           'Operador Vinculado': this.normalizeText(operatorNames) || 'Sem operador',
-          'Data de Movimentação': this.formatDateTime(transferDate),
+          'Data de Última Movimentação': this.formatDateTime(lastActivity),
           // Campo auxiliar para ordenação
-          _sortDate: transferDate,
+          _sortDate: lastActivity,
         };
       } else {
-        // Mostrar todas as linhas com data de cadastro e atualização
+        // Mostrar todas as linhas com data de cadastro e última movimentação
         return {
           Carteira: this.normalizeText(segment?.name) || 'Sem segmento',
           Número: line.phone,
           Status: line.lineStatus === 'ban' ? 'Banida' : line.lineStatus === 'active' ? 'Ativa' : 'Desconhecido',
           'Operador Vinculado': this.normalizeText(operatorNames) || 'Sem operador',
           'Data de Cadastro': this.formatDateTime(line.createdAt),
-          'Data de Atualização': this.formatDateTime(line.updatedAt),
+          'Data de Última Movimentação': this.formatDateTime(lastActivity),
           // Campo auxiliar para ordenação
-          _sortDate: line.updatedAt,
+          _sortDate: lastActivity,
         };
       }
     });
