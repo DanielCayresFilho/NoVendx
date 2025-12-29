@@ -594,7 +594,7 @@ export class ReportsService {
    * Estrutura: data_envio, hora_envio, fornecedor_envio, codigo_carteira, nome_carteira, 
    * segmento_carteira, numero_contrato, cpf_cliente, telefone_cliente, status_envio, 
    * numero_saida, login_usuario, template_envio, coringa_1, coringa_2, coringa_3, 
-   * coringa_4, tipo_envio
+   * coringa_4, tipo_envio, cliente_respondeu, qtd_mensagens_cliente, qtd_mensagens_operador
    */
   async getEnviosReport(filters: ReportFilterDto, userIdentifier?: 'cliente' | 'proprietario') {
     const whereClause: any = {};
@@ -656,6 +656,56 @@ export class ReportsService {
     const lines = await this.prisma.linesStock.findMany();
     const lineMap = new Map(lines.map(l => [l.id, l]));
 
+    // Buscar TODAS as conversas relacionadas (incluindo respostas do cliente) para calcular métricas
+    const allConversationsWhere: any = {};
+    if (filters.startDate || filters.endDate) {
+      allConversationsWhere.datetime = {};
+      if (filters.startDate) {
+        allConversationsWhere.datetime.gte = new Date(filters.startDate);
+      }
+      if (filters.endDate) {
+        allConversationsWhere.datetime.lte = new Date(filters.endDate);
+      }
+    }
+    const finalAllConversationsWhere = await this.applyIdentifierFilter(allConversationsWhere, userIdentifier, 'conversation');
+    
+    const allConversations = await this.prisma.conversation.findMany({
+      where: finalAllConversationsWhere,
+      orderBy: { datetime: 'asc' },
+    });
+
+    // Agrupar conversas por telefone e linha para analisar respostas
+    // Chave: `${contactPhone}|${userLine}` para identificar uma "conversa"
+    const conversationsByPhoneLine = new Map<string, any[]>();
+    allConversations.forEach(conv => {
+      const key = `${conv.contactPhone}|${conv.userLine || 'null'}`;
+      if (!conversationsByPhoneLine.has(key)) {
+        conversationsByPhoneLine.set(key, []);
+      }
+      conversationsByPhoneLine.get(key)!.push(conv);
+    });
+
+    // Função auxiliar para calcular métricas de uma conversa
+    const calculateConversationMetrics = (phone: string, lineId: number | null, afterDate?: Date) => {
+      const key = `${phone}|${lineId || 'null'}`;
+      const convs = conversationsByPhoneLine.get(key) || [];
+      
+      // Se afterDate foi fornecido, filtrar apenas conversas após essa data
+      const relevantConvs = afterDate 
+        ? convs.filter(c => c.datetime > afterDate)
+        : convs;
+      
+      const clientMessages = relevantConvs.filter(c => c.sender === 'contact').length;
+      const operatorMessages = relevantConvs.filter(c => c.sender === 'operator').length;
+      const clientResponded = clientMessages > 0;
+      
+      return {
+        clientResponded,
+        clientMessagesCount: clientMessages,
+        operatorMessagesCount: operatorMessages,
+      };
+    };
+
     const result: any[] = [];
 
     // Processar campanhas (massivos)
@@ -663,6 +713,13 @@ export class ReportsService {
       const contact = contactMap.get(campaign.contactPhone);
       const segment = campaign.contactSegment ? segmentMap.get(campaign.contactSegment) : null;
       const line = campaign.lineReceptor ? lineMap.get(campaign.lineReceptor) : null;
+
+      // Calcular métricas: verificar se houve conversas após o envio da campanha
+      const metrics = calculateConversationMetrics(
+        campaign.contactPhone,
+        campaign.lineReceptor || null,
+        campaign.dateTime // Apenas conversas após o envio da campanha
+      );
 
       result.push({
         data_envio: this.formatDate(campaign.dateTime),
@@ -683,34 +740,62 @@ export class ReportsService {
         coringa_3: null,
         coringa_4: null,
         tipo_envio: 'Massivo',
+        cliente_respondeu: metrics.clientResponded ? 'Verdadeiro' : 'Falso',
+        qtd_mensagens_cliente: metrics.clientMessagesCount,
+        qtd_mensagens_operador: metrics.operatorMessagesCount,
       });
     });
 
     // Processar conversas 1:1
+    // Agrupar conversas por telefone+linha para processar cada "conversa" apenas uma vez
+    const conversationGroups = new Map<string, any[]>();
     conversations.forEach(conv => {
-      const contact = contactMap.get(conv.contactPhone);
-      const segment = conv.segment ? segmentMap.get(conv.segment) : null;
-      const line = conv.userLine ? lineMap.get(conv.userLine) : null;
+      const key = `${conv.contactPhone}|${conv.userLine || 'null'}`;
+      if (!conversationGroups.has(key)) {
+        conversationGroups.set(key, []);
+      }
+      conversationGroups.get(key)!.push(conv);
+    });
+    
+    // Processar cada grupo de conversa (uma linha por "conversa")
+    conversationGroups.forEach((convs, key) => {
+      // Pegar a primeira mensagem do operador dessa conversa (primeiro envio 1:1)
+      const firstOperatorMessage = convs
+        .sort((a, b) => a.datetime.getTime() - b.datetime.getTime())[0];
+      
+      // Calcular métricas de toda a conversa (todas as mensagens relacionadas)
+      const metrics = calculateConversationMetrics(
+        firstOperatorMessage.contactPhone,
+        firstOperatorMessage.userLine || null
+        // Não passar afterDate para incluir toda a conversa relacionada
+      );
+      
+      const contact = contactMap.get(firstOperatorMessage.contactPhone);
+      const segment = firstOperatorMessage.segment ? segmentMap.get(firstOperatorMessage.segment) : null;
+      const line = firstOperatorMessage.userLine ? lineMap.get(firstOperatorMessage.userLine) : null;
 
       result.push({
-        data_envio: this.formatDate(conv.datetime),
-        hora_envio: this.formatTime(conv.datetime),
+        data_envio: this.formatDate(firstOperatorMessage.datetime),
+        hora_envio: this.formatTime(firstOperatorMessage.datetime),
         fornecedor_envio: line?.evolutionName || null,
         codigo_carteira: segment?.id || null,
         nome_carteira: segment?.name || null,
         segmento_carteira: segment?.name || null,
         numero_contrato: contact?.contract || null,
         cpf_cliente: contact?.cpf || null,
-        telefone_cliente: conv.contactPhone,
+        telefone_cliente: firstOperatorMessage.contactPhone,
         status_envio: 'Enviado',
         numero_saida: line?.phone || null,
-        login_usuario: conv.userName || null,
+        login_usuario: firstOperatorMessage.userName || null,
         template_envio: null,
         coringa_1: null,
         coringa_2: null,
         coringa_3: null,
         coringa_4: null,
         tipo_envio: '1:1',
+        cliente_respondeu: metrics.clientResponded ? 'Verdadeiro' : 'Falso',
+        qtd_mensagens_cliente: metrics.clientMessagesCount,
+        qtd_mensagens_operador: metrics.operatorMessagesCount,
       });
     });
 
