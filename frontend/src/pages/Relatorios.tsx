@@ -53,6 +53,7 @@ export default function Relatorios() {
   const [reportGenerated, setReportGenerated] = useState(false);
   const [reportBlob, setReportBlob] = useState<Blob | null>(null);
   const [onlyMovimentedLines, setOnlyMovimentedLines] = useState(false); // Para relatório de linhas
+  const [lastGeneratedReportLabel, setLastGeneratedReportLabel] = useState(""); // Nome do último relatório gerado
 
   const loadSegments = useCallback(async () => {
     try {
@@ -101,6 +102,9 @@ export default function Relatorios() {
       
       setReportBlob(blob);
       setReportGenerated(true);
+      // Atualizar nome do último relatório gerado apenas quando gerar com sucesso
+      const reportLabel = reportTypes.find(r => r.value === reportType)?.label || '';
+      setLastGeneratedReportLabel(reportLabel);
       toast({
         title: "Relatório gerado",
         description: "O relatório foi gerado com sucesso",
@@ -255,7 +259,7 @@ export default function Relatorios() {
                   Relatório Gerado com Sucesso!
                 </h3>
                 <p className="text-sm text-muted-foreground mb-6 text-center">
-                  Relatório: <strong>{getSelectedReportLabel()}</strong><br />
+                  Relatório: <strong>{lastGeneratedReportLabel || getSelectedReportLabel()}</strong><br />
                   Período: {startDate} até {endDate}
                 </p>
                 <Button onClick={handleExport}>

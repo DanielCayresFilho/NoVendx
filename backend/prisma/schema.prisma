@@ -239,6 +239,23 @@ model Conversation {
   @@index([archivedAt])
 }
 
+// Vínculo entre conversa (contactPhone + lineId) e operador por 24 horas
+// Garante que respostas sempre vão para o mesmo operador
+model ConversationOperatorBinding {
+  id           Int      @id @default(autoincrement())
+  contactPhone String
+  lineId       Int
+  userId       Int      // Operador vinculado
+  expiresAt    DateTime // Expira após 24h
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([contactPhone, lineId])
+  @@index([contactPhone, lineId])
+  @@index([userId])
+  @@index([expiresAt])
+}
+
 model Tag {
   id          Int      @id @default(autoincrement())
   name        String   @unique

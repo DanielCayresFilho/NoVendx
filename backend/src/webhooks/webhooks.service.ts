@@ -271,6 +271,40 @@ export class WebhooksService {
           mediaUrl,
         });
 
+        // Criar/atualizar vínculo de 24 horas entre conversa e operador (garantia adicional)
+        // O vínculo já é criado no assignInboundMessageToOperator, mas garantimos aqui também
+        if (finalOperatorId) {
+          try {
+            const expiresAt = new Date();
+            expiresAt.setHours(expiresAt.getHours() + 24); // Expira em 24 horas
+
+            await (this.prisma as any).conversationOperatorBinding.upsert({
+              where: {
+                contactPhone_lineId: {
+                  contactPhone: from,
+                  lineId: line.id,
+                },
+              },
+              update: {
+                userId: finalOperatorId,
+                expiresAt,
+                updatedAt: new Date(),
+              },
+              create: {
+                contactPhone: from,
+                lineId: line.id,
+                userId: finalOperatorId,
+                expiresAt,
+              },
+            });
+
+            console.log(`🔗 [Webhook] Vínculo criado/atualizado: contactPhone=${from}, lineId=${line.id}, userId=${finalOperatorId}, expiresAt=${expiresAt.toISOString()}`);
+          } catch (error: any) {
+            console.error(`❌ [Webhook] Erro ao criar/atualizar vínculo:`, error.message);
+            // Não lançar erro - vínculo é importante mas não deve quebrar o fluxo
+          }
+        }
+
         // Registrar evento de mensagem recebida
         await this.systemEventsService.logEvent(
           EventType.MESSAGE_RECEIVED,

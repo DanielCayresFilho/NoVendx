@@ -1810,7 +1810,7 @@ export class ReportsService {
 
   /**
    * RELATÓRIO DE USUÁRIOS
-   * Estrutura: Nome, E-mail, Segmento, ROLE
+   * Estrutura: Nome, E-mail, Segmento, Carteira, Login principal
    */
   async getUsuariosReport(filters: ReportFilterDto, userIdentifier?: 'cliente' | 'proprietario') {
     const whereClause: any = {
@@ -1836,12 +1836,17 @@ export class ReportsService {
 
     const result = users.map(user => {
       const segment = user.segment ? segmentMap.get(user.segment) : null;
+      const segmentName = this.normalizeText(segment?.name) || 'Sem segmento';
+      
+      // Transformar role: se role !== 'operator' → "sim", se role === 'operator' → "não"
+      const loginPrincipal = user.role !== 'operator' ? 'sim' : 'não';
 
       return {
         Nome: this.normalizeText(user.name),
         'E-mail': this.normalizeText(user.email),
-        Segmento: this.normalizeText(segment?.name) || 'Sem segmento',
-        ROLE: user.role.toUpperCase(),
+        Segmento: segmentName,
+        Carteira: segmentName, // Mesmo valor de Segmento
+        'Login principal': loginPrincipal,
       };
     });
 

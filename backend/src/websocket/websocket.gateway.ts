@@ -1562,6 +1562,11 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         isAdminTest: isAdminTest, // Marcar se é teste administrador
       });
 
+      // Criar/atualizar vínculo de 24 horas entre conversa e operador
+      if (currentLineId) {
+        await this.createOrUpdateConversationBinding(data.contactPhone, currentLineId, user.id);
+      }
+
       // Log apenas para mensagens enviadas com sucesso (fluxo principal)
       console.log(`✅ Mensagem enviada: ${user.name} → ${data.contactPhone}`);
       
@@ -1834,6 +1839,9 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
           mediaUrl: data.mediaUrl,
         });
         
+        // Criar/atualizar vínculo de 24 horas entre conversa e operador
+        await this.createOrUpdateConversationBinding(data.contactPhone, newLine.id, user.id);
+        
         // Registrar mensagem do operador
         await this.controlPanelService.registerOperatorMessage(
           data.contactPhone,
@@ -1879,6 +1887,39 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       contactPhone: data.contactPhone,
       typing: data.typing,
     });
+  }
+
+  // Método auxiliar para criar/atualizar vínculo de conversa com operador (24 horas)
+  private async createOrUpdateConversationBinding(contactPhone: string, lineId: number, userId: number) {
+    try {
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 24); // Expira em 24 horas
+
+      await (this.prisma as any).conversationOperatorBinding.upsert({
+        where: {
+          contactPhone_lineId: {
+            contactPhone,
+            lineId,
+          },
+        },
+        update: {
+          userId,
+          expiresAt,
+          updatedAt: new Date(),
+        },
+        create: {
+          contactPhone,
+          lineId,
+          userId,
+          expiresAt,
+        },
+      });
+
+      console.log(`🔗 [WebSocket] Vínculo criado/atualizado: contactPhone=${contactPhone}, lineId=${lineId}, userId=${userId}, expiresAt=${expiresAt.toISOString()}`);
+    } catch (error: any) {
+      console.error(`❌ [WebSocket] Erro ao criar/atualizar vínculo:`, error.message);
+      // Não lançar erro - vínculo é importante mas não deve quebrar o fluxo
+    }
   }
 
   // Método auxiliar para encontrar linha disponível para o operador

@@ -944,6 +944,34 @@ export class LinesService {
 
     // Usar transaction com lock para evitar race condition
     return await this.prisma.$transaction(async (tx) => {
+      // PRIMEIRO: Verificar se existe vínculo ativo (não expirado) para contactPhone + lineId
+      const now = new Date();
+      const activeBinding = await (tx as any).conversationOperatorBinding.findFirst({
+        where: {
+          contactPhone,
+          lineId,
+          expiresAt: {
+            gt: now, // Vínculo ainda não expirado
+          },
+        },
+      });
+
+      // Se existe vínculo ativo, verificar se o operador está online
+      if (activeBinding) {
+        const boundOperator = onlineOperators.find(op => op.id === activeBinding.userId);
+        
+        if (boundOperator) {
+          console.log(`✅ [LinesService] Mensagem atribuída ao operador vinculado (vínculo ativo): ${activeBinding.userId}`);
+          return activeBinding.userId;
+        } else {
+          // Vínculo existe mas operador está offline - remover vínculo expirado e continuar
+          console.log(`⚠️ [LinesService] Vínculo ativo encontrado mas operador ${activeBinding.userId} está offline. Removendo vínculo.`);
+          await (tx as any).conversationOperatorBinding.delete({
+            where: { id: activeBinding.id },
+          });
+        }
+      }
+
       // Verificar se já existe conversa ativa com algum operador específico (com lock)
       const existingConversation = await tx.conversation.findFirst({
         where: {
@@ -957,34 +985,64 @@ export class LinesService {
         },
       });
 
-      // Se já existe conversa ativa, atribuir ao mesmo operador
+      // Se já existe conversa ativa, atribuir ao mesmo operador e criar/atualizar vínculo
+      let selectedOperatorId: number | null = null;
+      
       if (existingConversation && existingConversation.userId) {
+        selectedOperatorId = existingConversation.userId;
         console.log(`✅ [LinesService] Mensagem atribuída ao operador existente: ${existingConversation.userId}`);
-        return existingConversation.userId;
+      } else {
+        // Distribuir de forma round-robin: contar conversas ativas de cada operador (com lock)
+        const operatorConversationCounts = await Promise.all(
+          onlineOperators.map(async (operator) => {
+            const count = await tx.conversation.count({
+              where: {
+                userLine: lineId,
+                userId: operator.id,
+                tabulation: null, // Apenas conversas ativas
+              },
+            });
+            return { operatorId: operator.id, count };
+          })
+        );
+
+        // Ordenar por menor número de conversas (balanceamento)
+        operatorConversationCounts.sort((a, b) => a.count - b.count);
+
+        // Retornar o operador com menos conversas
+        selectedOperatorId = operatorConversationCounts[0]?.operatorId || onlineOperators[0]?.id || null;
+        console.log(`✅ [LinesService] Mensagem atribuída ao operador ${selectedOperatorId} (${operatorConversationCounts[0]?.count || 0} conversas ativas)`);
       }
 
-      // Distribuir de forma round-robin: contar conversas ativas de cada operador (com lock)
-      const operatorConversationCounts = await Promise.all(
-        onlineOperators.map(async (operator) => {
-          const count = await tx.conversation.count({
-            where: {
-              userLine: lineId,
-              userId: operator.id,
-              tabulation: null, // Apenas conversas ativas
+      // Criar ou atualizar vínculo de 24 horas
+      if (selectedOperatorId) {
+        const expiresAt = new Date();
+        expiresAt.setHours(expiresAt.getHours() + 24); // Expira em 24 horas
+
+        await (tx as any).conversationOperatorBinding.upsert({
+          where: {
+            contactPhone_lineId: {
+              contactPhone,
+              lineId,
             },
-          });
-          return { operatorId: operator.id, count };
-        })
-      );
+          },
+          update: {
+            userId: selectedOperatorId,
+            expiresAt,
+            updatedAt: new Date(),
+          },
+          create: {
+            contactPhone,
+            lineId,
+            userId: selectedOperatorId,
+            expiresAt,
+          },
+        });
 
-      // Ordenar por menor número de conversas (balanceamento)
-      operatorConversationCounts.sort((a, b) => a.count - b.count);
-
-      // Retornar o operador com menos conversas
-      const selectedOperatorId = operatorConversationCounts[0]?.operatorId || onlineOperators[0]?.id;
-      console.log(`✅ [LinesService] Mensagem atribuída ao operador ${selectedOperatorId} (${operatorConversationCounts[0]?.count || 0} conversas ativas)`);
+        console.log(`🔗 [LinesService] Vínculo criado/atualizado: contactPhone=${contactPhone}, lineId=${lineId}, userId=${selectedOperatorId}, expiresAt=${expiresAt.toISOString()}`);
+      }
       
-      return selectedOperatorId || null;
+      return selectedOperatorId;
     }, { isolationLevel: 'Serializable' });
   }
 
