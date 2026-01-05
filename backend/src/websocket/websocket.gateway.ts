@@ -422,11 +422,45 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       }
 
       // Enviar conversas ativas ao conectar (para operators e admins)
-      // Buscar por userId mesmo se não tiver linha, pois as conversas estão vinculadas ao operador
       if (user.role === 'operator' || user.role === 'admin') {
-        // Buscar conversas apenas por userId (não por userLine)
-        // Isso permite que as conversas continuem aparecendo mesmo se a linha foi banida
-        const activeConversations = await this.conversationsService.findActiveConversations(undefined, user.id);
+        let activeConversations;
+
+        if (user.role === 'admin') {
+          // Admin vê TODAS as conversas ativas
+          activeConversations = await this.prisma.conversation.findMany({
+            where: { tabulation: null },
+            orderBy: { datetime: 'asc' },
+          });
+        } else {
+          // Operador: buscar linha atual (pode estar em LineOperator ou no campo legacy)
+          let currentLineId = user.line;
+          if (!currentLineId) {
+            const lineOperator = await (this.prisma as any).lineOperator.findFirst({
+              where: { userId: user.id },
+              select: { lineId: true },
+            });
+            currentLineId = lineOperator?.lineId || null;
+          }
+
+          if (!currentLineId) {
+            // Se não tem linha, retornar apenas conversas do próprio operador
+            console.log(`📋 [WebSocket] Operador ${user.name} não tem linha - enviando apenas suas conversas`);
+            activeConversations = await this.conversationsService.findActiveConversations(undefined, user.id);
+          } else {
+            // MODO COMPARTILHADO: Buscar todos os operadores da mesma linha
+            const lineOperators = await (this.prisma as any).lineOperator.findMany({
+              where: { lineId: currentLineId },
+              select: { userId: true },
+            });
+
+            const userIds = lineOperators.map(lo => lo.userId);
+            console.log(`📋 [WebSocket] Operador ${user.name} está na linha ${currentLineId} com ${userIds.length} operador(es) - enviando conversas de todos`);
+
+            // Buscar conversas de TODOS os operadores da linha compartilhada
+            activeConversations = await this.conversationsService.findActiveConversationsByUserIds(userIds);
+          }
+        }
+
         client.emit('active-conversations', activeConversations);
 
         // Processar mensagens pendentes na fila quando operador fica online

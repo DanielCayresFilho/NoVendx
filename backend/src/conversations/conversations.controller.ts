@@ -47,9 +47,9 @@ export class ConversationsController {
 
   @Get('active')
   @Roles(Role.admin, Role.supervisor, Role.operator, Role.digital)
-  getActiveConversations(@CurrentUser() user: any) {
+  async getActiveConversations(@CurrentUser() user: any) {
     console.log(`📋 [GET /conversations/active] Usuário: ${user.name} (${user.role}), line: ${user.line}, segment: ${user.segment}`);
-    
+
     // Admin e digital veem TODAS as conversas ativas (sem filtro)
     if (user.role === Role.admin || user.role === Role.digital) {
       return this.conversationsService.findAll({ tabulation: null });
@@ -58,16 +58,40 @@ export class ConversationsController {
     if (user.role === Role.supervisor) {
       return this.conversationsService.findAll({ segment: user.segment, tabulation: null });
     }
-    // Operador: buscar conversas apenas por userId (não por userLine)
-    // Isso permite que as conversas continuem aparecendo mesmo se a linha foi banida
-    return this.conversationsService.findActiveConversations(undefined, user.id);
+    // Operador: buscar linha atual (pode estar em LineOperator ou no campo legacy)
+    let currentLineId = user.line;
+    if (!currentLineId) {
+      const lineOperator = await this.prisma.lineOperator.findFirst({
+        where: { userId: user.id },
+        select: { lineId: true },
+      });
+      currentLineId = lineOperator?.lineId || null;
+    }
+
+    // Se não tem linha, retornar apenas conversas do próprio operador
+    if (!currentLineId) {
+      console.log(`📋 [GET /conversations/active] Operador ${user.name} não tem linha - retornando apenas suas conversas`);
+      return this.conversationsService.findActiveConversations(undefined, user.id);
+    }
+
+    // MODO COMPARTILHADO: Buscar todos os operadores da mesma linha
+    const lineOperators = await this.prisma.lineOperator.findMany({
+      where: { lineId: currentLineId },
+      select: { userId: true },
+    });
+
+    const userIds = lineOperators.map(lo => lo.userId);
+    console.log(`📋 [GET /conversations/active] Operador ${user.name} está na linha ${currentLineId} com ${userIds.length} operador(es) - retornando conversas de todos`);
+
+    // Retornar conversas de TODOS os operadores da linha compartilhada
+    return this.conversationsService.findActiveConversationsByUserIds(userIds);
   }
 
   @Get('tabulated')
   @Roles(Role.admin, Role.supervisor, Role.operator, Role.digital)
-  getTabulatedConversations(@CurrentUser() user: any) {
+  async getTabulatedConversations(@CurrentUser() user: any) {
     console.log(`📋 [GET /conversations/tabulated] Usuário: ${user.name} (${user.role}), line: ${user.line}, segment: ${user.segment}`);
-    
+
     // Admin e digital veem TODAS as conversas tabuladas (sem filtro)
     if (user.role === Role.admin || user.role === Role.digital) {
       return this.conversationsService.findAll({ tabulation: { not: null } });
@@ -76,9 +100,33 @@ export class ConversationsController {
     if (user.role === Role.supervisor) {
       return this.conversationsService.findAll({ segment: user.segment, tabulation: { not: null } });
     }
-    // Operador: buscar conversas tabuladas apenas por userId (não por userLine)
-    // Isso permite que as conversas tabuladas continuem aparecendo mesmo se a linha foi banida
-    return this.conversationsService.findTabulatedConversations(undefined, user.id);
+    // Operador: buscar linha atual (pode estar em LineOperator ou no campo legacy)
+    let currentLineId = user.line;
+    if (!currentLineId) {
+      const lineOperator = await this.prisma.lineOperator.findFirst({
+        where: { userId: user.id },
+        select: { lineId: true },
+      });
+      currentLineId = lineOperator?.lineId || null;
+    }
+
+    // Se não tem linha, retornar apenas conversas do próprio operador
+    if (!currentLineId) {
+      console.log(`📋 [GET /conversations/tabulated] Operador ${user.name} não tem linha - retornando apenas suas conversas`);
+      return this.conversationsService.findTabulatedConversations(undefined, user.id);
+    }
+
+    // MODO COMPARTILHADO: Buscar todos os operadores da mesma linha
+    const lineOperators = await this.prisma.lineOperator.findMany({
+      where: { lineId: currentLineId },
+      select: { userId: true },
+    });
+
+    const userIds = lineOperators.map(lo => lo.userId);
+    console.log(`📋 [GET /conversations/tabulated] Operador ${user.name} está na linha ${currentLineId} com ${userIds.length} operador(es) - retornando conversas de todos`);
+
+    // Retornar conversas de TODOS os operadores da linha compartilhada
+    return this.conversationsService.findTabulatedConversationsByUserIds(userIds);
   }
 
   @Get('segment/:segment')

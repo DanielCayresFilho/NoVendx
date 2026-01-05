@@ -112,6 +112,36 @@ export class ConversationsService {
     return conversations;
   }
 
+  /**
+   * Buscar conversas ativas de múltiplos operadores (modo linha compartilhada)
+   */
+  async findActiveConversationsByUserIds(userIds: number[]) {
+    return this.prisma.conversation.findMany({
+      where: {
+        userId: { in: userIds },
+        tabulation: null,
+      },
+      orderBy: {
+        datetime: 'asc',
+      },
+    });
+  }
+
+  /**
+   * Buscar conversas tabuladas de múltiplos operadores (modo linha compartilhada)
+   */
+  async findTabulatedConversationsByUserIds(userIds: number[]) {
+    return this.prisma.conversation.findMany({
+      where: {
+        userId: { in: userIds },
+        tabulation: { not: null },
+      },
+      orderBy: {
+        datetime: 'asc',
+      },
+    });
+  }
+
   async findOne(id: number) {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id },
