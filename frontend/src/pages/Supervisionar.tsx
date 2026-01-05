@@ -1,5 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { MessageCircle, ArrowRight, ArrowLeft, AlertTriangle, Loader2, FileText } from "lucide-react";
+import {
+  MessageCircle,
+  ArrowRight,
+  ArrowLeft,
+  AlertTriangle,
+  Loader2,
+  FileText,
+} from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,8 +19,15 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
-import { conversationsService, usersService, Conversation as APIConversation, User, API_BASE_URL } from "@/services/api";
+import {
+  conversationsService,
+  usersService,
+  Conversation as APIConversation,
+  User,
+  API_BASE_URL,
+} from "@/services/api";
 import { format } from "date-fns";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface ConversationGroup {
   contactPhone: string;
@@ -28,18 +42,25 @@ interface ConversationGroup {
 export default function Supervisionar() {
   const [conversations, setConversations] = useState<ConversationGroup[]>([]);
   const [operators, setOperators] = useState<User[]>([]);
-  const [selectedConversation, setSelectedConversation] = useState<ConversationGroup | null>(null);
+  const [selectedConversation, setSelectedConversation] =
+    useState<ConversationGroup | null>(null);
   const [selectedOperator, setSelectedOperator] = useState("all");
   const [isLoading, setIsLoading] = useState(true);
 
+  const { user } = useAuth();
+
   const loadOperators = useCallback(async () => {
     try {
-      const data = await usersService.list({ role: 'operator' });
+      const params: any = { role: "operator" };
+      if (user?.role === "supervisor" && user.segmentId) {
+        params.segment = user.segmentId;
+      }
+      const data = await usersService.list(params);
       setOperators(data);
     } catch (error) {
-      console.error('Error loading operators:', error);
+      console.error("Error loading operators:", error);
     }
-  }, []);
+  }, [user]);
 
   // Ref para evitar loop infinito
   const selectedPhoneRef = useRef<string | null>(null);
@@ -56,12 +77,12 @@ export default function Supervisionar() {
       if (isFirstLoad.current) {
         setIsLoading(true);
       }
-      
+
       const data = await conversationsService.getActive();
-      
+
       // Group conversations by contact phone
       const groupedMap = new Map<string, ConversationGroup>();
-      
+
       data.forEach((conv) => {
         const existing = groupedMap.get(conv.contactPhone);
         if (existing) {
@@ -72,38 +93,45 @@ export default function Supervisionar() {
           if (convTime > existingTime) {
             existing.lastMessage = conv.message;
             existing.lastMessageTime = conv.datetime;
-            existing.isFromContact = conv.sender === 'contact';
-            existing.operatorName = conv.userName || 'Sem operador';
+            existing.isFromContact = conv.sender === "contact";
+            existing.operatorName = conv.userName || "Sem operador";
           }
         } else {
           groupedMap.set(conv.contactPhone, {
             contactPhone: conv.contactPhone,
             contactName: conv.contactName,
-            operatorName: conv.userName || 'Sem operador',
+            operatorName: conv.userName || "Sem operador",
             lastMessage: conv.message,
             lastMessageTime: conv.datetime,
-            isFromContact: conv.sender === 'contact',
+            isFromContact: conv.sender === "contact",
             messages: [conv],
           });
         }
       });
 
       // Sort messages within each group and groups by last message time
-      const groups = Array.from(groupedMap.values()).map(group => ({
-        ...group,
-        messages: group.messages.sort((a, b) => 
-          new Date(a.datetime).getTime() - new Date(b.datetime).getTime()
-        ),
-      })).sort((a, b) => 
-        new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime()
-      );
+      const groups = Array.from(groupedMap.values())
+        .map((group) => ({
+          ...group,
+          messages: group.messages.sort(
+            (a, b) =>
+              new Date(a.datetime).getTime() - new Date(b.datetime).getTime()
+          ),
+        }))
+        .sort(
+          (a, b) =>
+            new Date(b.lastMessageTime).getTime() -
+            new Date(a.lastMessageTime).getTime()
+        );
 
       setConversations(groups);
-      
+
       // Update selected conversation if it exists (usando ref)
       const currentSelectedPhone = selectedPhoneRef.current;
       if (currentSelectedPhone) {
-        const updated = groups.find(g => g.contactPhone === currentSelectedPhone);
+        const updated = groups.find(
+          (g) => g.contactPhone === currentSelectedPhone
+        );
         if (updated) {
           setSelectedConversation(updated);
         }
@@ -111,7 +139,8 @@ export default function Supervisionar() {
     } catch (error) {
       toast({
         title: "Erro ao carregar conversas",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
+        description:
+          error instanceof Error ? error.message : "Erro desconhecido",
         variant: "destructive",
       });
     } finally {
@@ -134,18 +163,21 @@ export default function Supervisionar() {
     return () => clearInterval(interval);
   }, [loadConversations]);
 
-  const filteredConversations = selectedOperator === "all"
-    ? conversations
-    : conversations.filter(c => {
-        const operator = operators.find(o => o.id.toString() === selectedOperator);
-        return operator && c.operatorName === operator.name;
-      });
+  const filteredConversations =
+    selectedOperator === "all"
+      ? conversations
+      : conversations.filter((c) => {
+          const operator = operators.find(
+            (o) => o.id.toString() === selectedOperator
+          );
+          return operator && c.operatorName === operator.name;
+        });
 
   const formatTime = (datetime: string) => {
     try {
-      return format(new Date(datetime), 'HH:mm');
+      return format(new Date(datetime), "HH:mm");
     } catch {
-      return '';
+      return "";
     }
   };
 
@@ -157,14 +189,19 @@ export default function Supervisionar() {
           {/* Header */}
           <div className="p-4 border-b border-border/50 space-y-3">
             <h2 className="font-semibold text-foreground">Supervisionar</h2>
-            <Select value={selectedOperator} onValueChange={setSelectedOperator}>
+            <Select
+              value={selectedOperator}
+              onValueChange={setSelectedOperator}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Todos os Operadores" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos os Operadores</SelectItem>
                 {operators.map((op) => (
-                  <SelectItem key={op.id} value={op.id.toString()}>{op.name}</SelectItem>
+                  <SelectItem key={op.id} value={op.id.toString()}>
+                    {op.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -190,13 +227,18 @@ export default function Supervisionar() {
                     className={cn(
                       "w-full p-3 rounded-xl text-left transition-colors",
                       "hover:bg-primary/5",
-                      selectedConversation?.contactPhone === conv.contactPhone && "bg-primary/10"
+                      selectedConversation?.contactPhone ===
+                        conv.contactPhone && "bg-primary/10"
                     )}
                   >
                     <div className="flex items-start gap-3">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-cyan flex items-center justify-center flex-shrink-0">
                         <span className="text-sm font-medium text-primary-foreground">
-                          {conv.contactName.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                          {conv.contactName
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")
+                            .slice(0, 2)}
                         </span>
                       </div>
                       <div className="flex-1 min-w-0">
@@ -208,7 +250,9 @@ export default function Supervisionar() {
                             {formatTime(conv.lastMessageTime)}
                           </span>
                         </div>
-                        <p className="text-xs text-warning truncate">Op: {conv.operatorName}</p>
+                        <p className="text-xs text-warning truncate">
+                          Op: {conv.operatorName}
+                        </p>
                         <div className="flex items-center gap-1 mt-0.5">
                           {conv.isFromContact ? (
                             <ArrowLeft className="h-3 w-3 text-muted-foreground" />
@@ -237,17 +281,27 @@ export default function Supervisionar() {
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-cyan flex items-center justify-center">
                     <span className="text-sm font-medium text-primary-foreground">
-                      {selectedConversation.contactName.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                      {selectedConversation.contactName
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")
+                        .slice(0, 2)}
                     </span>
                   </div>
                   <div>
-                    <p className="font-medium text-foreground">{selectedConversation.contactName}</p>
-                    <p className="text-xs text-muted-foreground">{selectedConversation.contactPhone}</p>
+                    <p className="font-medium text-foreground">
+                      {selectedConversation.contactName}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedConversation.contactPhone}
+                    </p>
                   </div>
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-muted-foreground">Atendente</p>
-                  <p className="text-sm font-medium text-warning">{selectedConversation.operatorName}</p>
+                  <p className="text-sm font-medium text-warning">
+                    {selectedConversation.operatorName}
+                  </p>
                 </div>
               </div>
 
@@ -259,87 +313,124 @@ export default function Supervisionar() {
                       key={msg.id}
                       className={cn(
                         "flex gap-2",
-                        msg.sender === 'contact' ? "justify-start" : "justify-end"
+                        msg.sender === "contact"
+                          ? "justify-start"
+                          : "justify-end"
                       )}
                     >
-                      {msg.sender === 'contact' && (
+                      {msg.sender === "contact" && (
                         <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
                           <span className="text-xs font-medium">
-                            {selectedConversation.contactName.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                            {selectedConversation.contactName
+                              .split(" ")
+                              .map((n) => n[0])
+                              .join("")
+                              .slice(0, 2)}
                           </span>
                         </div>
                       )}
                       <div
                         className={cn(
                           "max-w-[70%] rounded-2xl px-4 py-2",
-                          msg.sender === 'contact'
+                          msg.sender === "contact"
                             ? "bg-card border border-border"
                             : "bg-primary text-primary-foreground"
                         )}
                       >
                         {/* Renderizar mídia baseado no messageType */}
-                        {msg.messageType === 'image' && msg.mediaUrl ? (
+                        {msg.messageType === "image" && msg.mediaUrl ? (
                           <div className="mb-2">
-                            <img 
-                              src={msg.mediaUrl.startsWith('http') ? msg.mediaUrl : `${API_BASE_URL}${msg.mediaUrl}`}
+                            <img
+                              src={
+                                msg.mediaUrl.startsWith("http")
+                                  ? msg.mediaUrl
+                                  : `${API_BASE_URL}${msg.mediaUrl}`
+                              }
                               alt="Imagem"
                               className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                              style={{ maxHeight: '300px' }}
-                              onClick={() => window.open(msg.mediaUrl!.startsWith('http') ? msg.mediaUrl! : `${API_BASE_URL}${msg.mediaUrl}`, '_blank')}
+                              style={{ maxHeight: "300px" }}
+                              onClick={() =>
+                                window.open(
+                                  msg.mediaUrl!.startsWith("http")
+                                    ? msg.mediaUrl!
+                                    : `${API_BASE_URL}${msg.mediaUrl}`,
+                                  "_blank"
+                                )
+                              }
                             />
-                            {msg.message && !msg.message.includes('recebida') && (
-                              <p className="text-sm mt-2">{msg.message}</p>
-                            )}
+                            {msg.message &&
+                              !msg.message.includes("recebida") && (
+                                <p className="text-sm mt-2">{msg.message}</p>
+                              )}
                           </div>
-                        ) : msg.messageType === 'audio' && msg.mediaUrl ? (
+                        ) : msg.messageType === "audio" && msg.mediaUrl ? (
                           <div className="mb-2">
-                            <audio 
-                              controls 
+                            <audio
+                              controls
                               className="max-w-full"
-                              src={msg.mediaUrl.startsWith('http') ? msg.mediaUrl : `${API_BASE_URL}${msg.mediaUrl}`}
+                              src={
+                                msg.mediaUrl.startsWith("http")
+                                  ? msg.mediaUrl
+                                  : `${API_BASE_URL}${msg.mediaUrl}`
+                              }
                             >
                               Seu navegador não suporta áudio.
                             </audio>
                           </div>
-                        ) : msg.messageType === 'video' && msg.mediaUrl ? (
+                        ) : msg.messageType === "video" && msg.mediaUrl ? (
                           <div className="mb-2">
-                            <video 
-                              controls 
+                            <video
+                              controls
                               className="max-w-full rounded-lg"
-                              style={{ maxHeight: '300px' }}
-                              src={msg.mediaUrl.startsWith('http') ? msg.mediaUrl : `${API_BASE_URL}${msg.mediaUrl}`}
+                              style={{ maxHeight: "300px" }}
+                              src={
+                                msg.mediaUrl.startsWith("http")
+                                  ? msg.mediaUrl
+                                  : `${API_BASE_URL}${msg.mediaUrl}`
+                              }
                             >
                               Seu navegador não suporta vídeo.
                             </video>
-                            {msg.message && !msg.message.includes('recebido') && (
-                              <p className="text-sm mt-2">{msg.message}</p>
-                            )}
+                            {msg.message &&
+                              !msg.message.includes("recebido") && (
+                                <p className="text-sm mt-2">{msg.message}</p>
+                              )}
                           </div>
-                        ) : msg.messageType === 'document' && msg.mediaUrl ? (
+                        ) : msg.messageType === "document" && msg.mediaUrl ? (
                           <div className="mb-2">
-                            <a 
-                              href={msg.mediaUrl.startsWith('http') ? msg.mediaUrl : `${API_BASE_URL}${msg.mediaUrl}`}
+                            <a
+                              href={
+                                msg.mediaUrl.startsWith("http")
+                                  ? msg.mediaUrl
+                                  : `${API_BASE_URL}${msg.mediaUrl}`
+                              }
                               target="_blank"
                               rel="noopener noreferrer"
                               className="flex items-center gap-2 text-sm underline hover:no-underline"
                             >
                               <FileText className="h-4 w-4" />
-                              {msg.message || 'Documento'}
+                              {msg.message || "Documento"}
                             </a>
                           </div>
                         ) : (
                           <p className="text-sm">{msg.message}</p>
                         )}
-                        <p className={cn(
-                          "text-xs mt-1",
-                          msg.sender === 'contact' ? "text-muted-foreground" : "text-primary-foreground/70"
-                        )}>
+                        <p
+                          className={cn(
+                            "text-xs mt-1",
+                            msg.sender === "contact"
+                              ? "text-muted-foreground"
+                              : "text-primary-foreground/70"
+                          )}
+                        >
                           {formatTime(msg.datetime)}
                         </p>
                       </div>
-                      {msg.sender === 'operator' && (
+                      {msg.sender === "operator" && (
                         <div className="w-8 h-8 rounded-full bg-warning/20 flex items-center justify-center flex-shrink-0">
-                          <span className="text-xs font-medium text-warning">OP</span>
+                          <span className="text-xs font-medium text-warning">
+                            OP
+                          </span>
                         </div>
                       )}
                     </div>
@@ -351,7 +442,9 @@ export default function Supervisionar() {
               <div className="p-3 bg-warning/10 border-t border-warning/30">
                 <div className="flex items-center gap-2 justify-center text-warning">
                   <AlertTriangle className="h-4 w-4" />
-                  <span className="text-sm font-medium">Modo supervisão - Somente leitura</span>
+                  <span className="text-sm font-medium">
+                    Modo supervisão - Somente leitura
+                  </span>
                 </div>
               </div>
             </>

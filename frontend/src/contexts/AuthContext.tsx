@@ -1,7 +1,23 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { authService, getAuthToken, setAuthToken, type LoginResponse } from '@/services/api';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+} from "react";
+import {
+  authService,
+  getAuthToken,
+  setAuthToken,
+  type LoginResponse,
+} from "@/services/api";
 
-export type UserRole = 'admin' | 'supervisor' | 'operador';
+export type UserRole =
+  | "admin"
+  | "supervisor"
+  | "operador"
+  | "ativador"
+  | "digital";
 
 export interface User {
   id: string;
@@ -29,28 +45,30 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // Map API role to frontend role
 const mapRole = (apiRole: string): UserRole => {
   switch (apiRole) {
-    case 'admin':
-      return 'admin';
-    case 'supervisor':
-      return 'supervisor';
-    case 'operator':
-      return 'operador';
-    case 'ativador':
-      return 'ativador';
+    case "admin":
+      return "admin";
+    case "supervisor":
+      return "supervisor";
+    case "operator":
+      return "operador";
+    case "ativador":
+      return "ativador";
+    case "digital":
+      return "digital";
     default:
-      return 'operador';
+      return "operador";
   }
 };
 
 // Map API user to frontend user
-const mapUser = (apiUser: LoginResponse['user']): User => ({
+const mapUser = (apiUser: LoginResponse["user"]): User => ({
   id: String(apiUser.id),
   name: apiUser.name,
   email: apiUser.email,
   role: mapRole(apiUser.role),
   segmentId: apiUser.segment ?? undefined,
   lineId: apiUser.line ?? undefined,
-  isOnline: apiUser.status === 'Online',
+  isOnline: apiUser.status === "Online",
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -64,7 +82,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const token = getAuthToken();
     if (token) {
-      authService.me()
+      authService
+        .me()
         .then((apiUser) => {
           setState({
             user: mapUser(apiUser),
@@ -81,33 +100,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           });
         });
     } else {
-      setState(prev => ({ ...prev, isLoading: false }));
+      setState((prev) => ({ ...prev, isLoading: false }));
     }
   }, []);
 
-  const login = useCallback(async (email: string, password: string): Promise<boolean> => {
-    setState(prev => ({ ...prev, isLoading: true }));
-    
-    try {
-      const response = await authService.login(email, password);
-      setState({
-        user: mapUser(response.user),
-        isAuthenticated: true,
-        isLoading: false,
-      });
-      return true;
-    } catch (error) {
-      console.error('Login error:', error);
-      setState(prev => ({ ...prev, isLoading: false }));
-      return false;
-    }
-  }, []);
+  const login = useCallback(
+    async (email: string, password: string): Promise<boolean> => {
+      setState((prev) => ({ ...prev, isLoading: true }));
+
+      try {
+        const response = await authService.login(email, password);
+        setState({
+          user: mapUser(response.user),
+          isAuthenticated: true,
+          isLoading: false,
+        });
+        return true;
+      } catch (error) {
+        console.error("Login error:", error);
+        setState((prev) => ({ ...prev, isLoading: false }));
+        return false;
+      }
+    },
+    []
+  );
 
   const logout = useCallback(async () => {
     try {
       await authService.logout();
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error("Logout error:", error);
     } finally {
       setState({
         user: null,
@@ -127,7 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 }

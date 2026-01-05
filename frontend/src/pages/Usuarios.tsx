@@ -15,56 +15,83 @@ import {
 import { DialogFooter } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
-import { usersService, segmentsService, linesService, type User as ApiUser, type Segment, type Line } from "@/services/api";
+import {
+  usersService,
+  segmentsService,
+  linesService,
+  type User as ApiUser,
+  type Segment,
+  type Line,
+} from "@/services/api";
 import { Loader2, Upload } from "lucide-react";
 
 interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'supervisor' | 'operador' | 'ativador';
+  role: "admin" | "supervisor" | "operador" | "ativador" | "digital";
   segment?: number;
   line?: number;
   lineName?: string;
   lineEvolutionName?: string;
   isOnline: boolean;
   oneToOneActive?: boolean;
-  identifier?: 'cliente' | 'proprietario';
+  identifier?: "cliente" | "proprietario";
 }
 
 const roleColors = {
   admin: "bg-destructive text-destructive-foreground",
   supervisor: "bg-warning text-warning-foreground",
   operador: "bg-success text-success-foreground",
-  ativador: "bg-blue-600 text-white"
+  ativador: "bg-blue-600 text-white",
+  digital: "bg-purple-600 text-white",
 };
 
 const roleLabels = {
   admin: "Admin",
   supervisor: "Supervisor",
   operador: "Operador",
-  ativador: "Ativador"
+  ativador: "Ativador",
+  digital: "Digital",
 };
 
 // Map API role to frontend role
-const mapRole = (apiRole: string): 'admin' | 'supervisor' | 'operador' | 'ativador' => {
+const mapRole = (
+  apiRole: string
+): "admin" | "supervisor" | "operador" | "ativador" | "digital" => {
   switch (apiRole) {
-    case 'admin': return 'admin';
-    case 'supervisor': return 'supervisor';
-    case 'operator': return 'operador';
-    case 'ativador': return 'ativador';
-    default: return 'operador';
+    case "admin":
+      return "admin";
+    case "supervisor":
+      return "supervisor";
+    case "operator":
+      return "operador";
+    case "ativador":
+      return "ativador";
+    case "digital":
+      return "digital";
+    default:
+      return "operador";
   }
 };
 
 // Map frontend role to API role
-const mapRoleToApi = (role: string): 'admin' | 'supervisor' | 'operator' | 'ativador' => {
+const mapRoleToApi = (
+  role: string
+): "admin" | "supervisor" | "operator" | "ativador" | "digital" => {
   switch (role) {
-    case 'admin': return 'admin';
-    case 'supervisor': return 'supervisor';
-    case 'operador': return 'operator';
-    case 'ativador': return 'ativador';
-    default: return 'operator';
+    case "admin":
+      return "admin";
+    case "supervisor":
+      return "supervisor";
+    case "operador":
+      return "operator";
+    case "ativador":
+      return "ativador";
+    case "digital":
+      return "digital";
+    default:
+      return "operator";
   }
 };
 
@@ -78,15 +105,15 @@ export default function Usuarios() {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [formData, setFormData] = useState({ 
-    name: '', 
-    email: '', 
-    password: '', 
-    role: 'operador', 
-    segment: '',
-    line: '',
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    password: "",
+    role: "operador",
+    segment: "",
+    line: "",
     oneToOneActive: false,
-    identifier: 'proprietario' as 'cliente' | 'proprietario'
+    identifier: "proprietario" as "cliente" | "proprietario",
   });
 
   // Load data on mount
@@ -100,34 +127,36 @@ export default function Usuarios() {
       const [usersData, segmentsData, linesData] = await Promise.all([
         usersService.list(),
         segmentsService.list(),
-        linesService.list()
+        linesService.list(),
       ]);
 
-      setUsers(usersData.map((u: ApiUser) => {
-        const userLine = linesData.find(l => l.id === u.line);
-        return {
-          id: String(u.id),
-          name: u.name,
-          email: u.email,
-          role: mapRole(u.role),
-          segment: u.segment ?? undefined,
-          line: u.line ?? undefined,
-          lineName: userLine?.phone,
-          lineEvolutionName: userLine?.evolutionName,
-          isOnline: u.status === 'Online',
-          oneToOneActive: u.oneToOneActive ?? false,
-          identifier: (u as any).identifier || 'proprietario'
-        };
-      }));
+      setUsers(
+        usersData.map((u: ApiUser) => {
+          const userLine = linesData.find((l) => l.id === u.line);
+          return {
+            id: String(u.id),
+            name: u.name,
+            email: u.email,
+            role: mapRole(u.role),
+            segment: u.segment ?? undefined,
+            line: u.line ?? undefined,
+            lineName: userLine?.phone,
+            lineEvolutionName: userLine?.evolutionName,
+            isOnline: u.status === "Online",
+            oneToOneActive: u.oneToOneActive ?? false,
+            identifier: (u as any).identifier || "proprietario",
+          };
+        })
+      );
 
       setSegments(segmentsData);
       setLines(linesData);
     } catch (error) {
-      console.error('Error loading data:', error);
+      console.error("Error loading data:", error);
       toast({
         title: "Erro ao carregar dados",
         description: "Não foi possível carregar a lista de usuários",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsLoading(false);
@@ -141,53 +170,64 @@ export default function Usuarios() {
       key: "role",
       label: "Perfil",
       render: (user) => (
-        <Badge className={roleColors[user.role]}>
-          {roleLabels[user.role]}
-        </Badge>
-      )
+        <Badge className={roleColors[user.role]}>{roleLabels[user.role]}</Badge>
+      ),
     },
-    { 
-      key: "lineName", 
+    {
+      key: "lineName",
       label: "Linha",
-      render: (user) => user.lineName || '-'
+      render: (user) => user.lineName || "-",
     },
-    { 
-      key: "lineEvolutionName", 
+    {
+      key: "lineEvolutionName",
       label: "Evolution",
-      render: (user) => user.lineEvolutionName || '-'
+      render: (user) => user.lineEvolutionName || "-",
     },
     {
       key: "isOnline",
       label: "Status",
       render: (user) => (
         <div className="flex items-center gap-2">
-          <div className={cn(
-            "w-2 h-2 rounded-full",
-            user.isOnline ? "bg-success" : "bg-muted-foreground"
-          )} />
-          <span className="text-sm">{user.isOnline ? "Online" : "Offline"}</span>
+          <div
+            className={cn(
+              "w-2 h-2 rounded-full",
+              user.isOnline ? "bg-success" : "bg-muted-foreground"
+            )}
+          />
+          <span className="text-sm">
+            {user.isOnline ? "Online" : "Offline"}
+          </span>
         </div>
-      )
-    }
+      ),
+    },
   ];
 
   const handleAdd = () => {
     setEditingUser(null);
-    setFormData({ name: '', email: '', password: '', role: 'operador', segment: '', line: '', oneToOneActive: false, identifier: 'proprietario' });
+    setFormData({
+      name: "",
+      email: "",
+      password: "",
+      role: "operador",
+      segment: "",
+      line: "",
+      oneToOneActive: false,
+      identifier: "proprietario",
+    });
     setIsFormOpen(true);
   };
 
   const handleEdit = (user: User) => {
     setEditingUser(user);
-    setFormData({ 
-      name: user.name, 
-      email: user.email, 
-      password: '', 
-      role: user.role, 
-      segment: user.segment ? String(user.segment) : '',
-      line: user.line ? String(user.line) : '',
+    setFormData({
+      name: user.name,
+      email: user.email,
+      password: "",
+      role: user.role,
+      segment: user.segment ? String(user.segment) : "",
+      line: user.line ? String(user.line) : "",
       oneToOneActive: user.oneToOneActive ?? false,
-      identifier: user.identifier || 'proprietario'
+      identifier: user.identifier || "proprietario",
     });
     setIsFormOpen(true);
   };
@@ -195,17 +235,17 @@ export default function Usuarios() {
   const handleDelete = async (user: User) => {
     try {
       await usersService.delete(Number(user.id));
-      setUsers(users.filter(u => u.id !== user.id));
+      setUsers(users.filter((u) => u.id !== user.id));
       toast({
         title: "Usuário removido",
         description: `O usuário ${user.name} foi removido com sucesso`,
       });
     } catch (error) {
-      console.error('Error deleting user:', error);
+      console.error("Error deleting user:", error);
       toast({
         title: "Erro ao remover",
         description: "Não foi possível remover o usuário",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   };
@@ -215,7 +255,7 @@ export default function Usuarios() {
       toast({
         title: "Campos obrigatórios",
         description: "Preencha o nome e email do usuário",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -224,7 +264,7 @@ export default function Usuarios() {
       toast({
         title: "Senha obrigatória",
         description: "Informe uma senha para o novo usuário",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -245,26 +285,31 @@ export default function Usuarios() {
           updateData.password = formData.password;
         }
 
-        const updated = await usersService.update(Number(editingUser.id), updateData);
-        setUsers(users.map(u => {
-          if (u.id === editingUser.id) {
-            const userLine = lines.find(l => l.id === updated.line);
-            return {
-              id: String(updated.id),
-              name: updated.name,
-              email: updated.email,
-              role: mapRole(updated.role),
-              segment: updated.segment ?? undefined,
-              line: updated.line ?? undefined,
-              lineName: userLine?.phone,
-              lineEvolutionName: userLine?.evolutionName,
-              isOnline: updated.status === 'Online',
-              oneToOneActive: updated.oneToOneActive ?? false,
-              identifier: (updated as any).identifier || 'proprietario'
-            };
-          }
-          return u;
-        }));
+        const updated = await usersService.update(
+          Number(editingUser.id),
+          updateData
+        );
+        setUsers(
+          users.map((u) => {
+            if (u.id === editingUser.id) {
+              const userLine = lines.find((l) => l.id === updated.line);
+              return {
+                id: String(updated.id),
+                name: updated.name,
+                email: updated.email,
+                role: mapRole(updated.role),
+                segment: updated.segment ?? undefined,
+                line: updated.line ?? undefined,
+                lineName: userLine?.phone,
+                lineEvolutionName: userLine?.evolutionName,
+                isOnline: updated.status === "Online",
+                oneToOneActive: updated.oneToOneActive ?? false,
+                identifier: (updated as any).identifier || "proprietario",
+              };
+            }
+            return u;
+          })
+        );
         toast({
           title: "Usuário atualizado",
           description: `O usuário ${updated.name} foi atualizado com sucesso`,
@@ -280,20 +325,23 @@ export default function Usuarios() {
           oneToOneActive: formData.oneToOneActive,
           identifier: formData.identifier,
         });
-        const newUserLine = lines.find(l => l.id === created.line);
-        setUsers([...users, {
-          id: String(created.id),
-          name: created.name,
-          email: created.email,
-          role: mapRole(created.role),
-          segment: created.segment ?? undefined,
-          line: created.line ?? undefined,
-          lineName: newUserLine?.phone,
-          lineEvolutionName: newUserLine?.evolutionName,
-          isOnline: created.status === 'Online',
-          oneToOneActive: created.oneToOneActive ?? false,
-          identifier: (created as any).identifier || 'proprietario'
-        }]);
+        const newUserLine = lines.find((l) => l.id === created.line);
+        setUsers([
+          ...users,
+          {
+            id: String(created.id),
+            name: created.name,
+            email: created.email,
+            role: mapRole(created.role),
+            segment: created.segment ?? undefined,
+            line: created.line ?? undefined,
+            lineName: newUserLine?.phone,
+            lineEvolutionName: newUserLine?.evolutionName,
+            isOnline: created.status === "Online",
+            oneToOneActive: created.oneToOneActive ?? false,
+            identifier: (created as any).identifier || "proprietario",
+          },
+        ]);
         toast({
           title: "Usuário criado",
           description: `O usuário ${created.name} foi criado com sucesso`,
@@ -301,11 +349,14 @@ export default function Usuarios() {
       }
       setIsFormOpen(false);
     } catch (error) {
-      console.error('Error saving user:', error);
+      console.error("Error saving user:", error);
       toast({
         title: "Erro ao salvar",
-        description: error instanceof Error ? error.message : "Não foi possível salvar o usuário",
-        variant: "destructive"
+        description:
+          error instanceof Error
+            ? error.message
+            : "Não foi possível salvar o usuário",
+        variant: "destructive",
       });
     } finally {
       setIsSaving(false);
@@ -332,18 +383,25 @@ export default function Usuarios() {
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="password">Senha {editingUser && "(deixe em branco para manter)"}</Label>
+        <Label htmlFor="password">
+          Senha {editingUser && "(deixe em branco para manter)"}
+        </Label>
         <Input
           id="password"
           type="password"
           value={formData.password}
-          onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+          onChange={(e) =>
+            setFormData({ ...formData, password: e.target.value })
+          }
           placeholder={editingUser ? "••••••••" : ""}
         />
       </div>
       <div className="space-y-2">
         <Label htmlFor="role">Perfil</Label>
-        <Select value={formData.role} onValueChange={(value) => setFormData({ ...formData, role: value })}>
+        <Select
+          value={formData.role}
+          onValueChange={(value) => setFormData({ ...formData, role: value })}
+        >
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
@@ -352,13 +410,21 @@ export default function Usuarios() {
             <SelectItem value="supervisor">Supervisor</SelectItem>
             <SelectItem value="operador">Operador</SelectItem>
             <SelectItem value="ativador">Ativador</SelectItem>
+            <SelectItem value="digital">Digital</SelectItem>
           </SelectContent>
         </Select>
       </div>
-      {(formData.role === 'operador' || formData.role === 'supervisor') && (
+      {(formData.role === "operador" ||
+        formData.role === "supervisor" ||
+        formData.role === "digital") && (
         <div className="space-y-2">
           <Label htmlFor="segment">Segmento</Label>
-          <Select value={formData.segment} onValueChange={(value) => setFormData({ ...formData, segment: value })}>
+          <Select
+            value={formData.segment}
+            onValueChange={(value) =>
+              setFormData({ ...formData, segment: value })
+            }
+          >
             <SelectTrigger>
               <SelectValue placeholder="Selecione um segmento" />
             </SelectTrigger>
@@ -374,7 +440,10 @@ export default function Usuarios() {
       )}
       <div className="space-y-2">
         <Label htmlFor="line">Linha WhatsApp</Label>
-        <Select value={formData.line} onValueChange={(value) => setFormData({ ...formData, line: value })}>
+        <Select
+          value={formData.line}
+          onValueChange={(value) => setFormData({ ...formData, line: value })}
+        >
           <SelectTrigger>
             <SelectValue placeholder="Selecione uma linha" />
           </SelectTrigger>
@@ -386,15 +455,19 @@ export default function Usuarios() {
                 return !isLineInUse;
               })
               .map((line) => (
-              <SelectItem key={line.id} value={String(line.id)}>
-                {line.phone} {line.oficial ? "(Oficial)" : `(${line.evolutionName})`}
-              </SelectItem>
-            ))}
+                <SelectItem key={line.id} value={String(line.id)}>
+                  {line.phone}{" "}
+                  {line.oficial ? "(Oficial)" : `(${line.evolutionName})`}
+                </SelectItem>
+              ))}
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">Define qual linha será usada para envio de mensagens (apenas linhas sem vínculo)</p>
+        <p className="text-xs text-muted-foreground">
+          Define qual linha será usada para envio de mensagens (apenas linhas
+          sem vínculo)
+        </p>
       </div>
-      {formData.role === 'operador' && (
+      {formData.role === "operador" && (
         <div className="flex items-center justify-between rounded-lg border p-4">
           <div className="space-y-0.5">
             <Label className="text-base font-medium">Permissão 1x1</Label>
@@ -405,13 +478,19 @@ export default function Usuarios() {
           <input
             type="checkbox"
             checked={formData.oneToOneActive}
-            onChange={(e) => setFormData({ ...formData, oneToOneActive: e.target.checked })}
+            onChange={(e) =>
+              setFormData({ ...formData, oneToOneActive: e.target.checked })
+            }
             className="h-4 w-4 rounded border-gray-300"
           />
         </div>
       )}
       <DialogFooter>
-        <Button variant="outline" onClick={() => setIsFormOpen(false)} disabled={isSaving}>
+        <Button
+          variant="outline"
+          onClick={() => setIsFormOpen(false)}
+          disabled={isSaving}
+        >
           Cancelar
         </Button>
         <Button onClick={handleSave} disabled={isSaving}>
@@ -422,11 +501,13 @@ export default function Usuarios() {
     </div>
   );
 
-  const handleUploadCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadCSV = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (!file.name.endsWith('.csv')) {
+    if (!file.name.endsWith(".csv")) {
       toast({
         title: "Arquivo inválido",
         description: "Por favor, selecione um arquivo CSV",
@@ -440,28 +521,35 @@ export default function Usuarios() {
       const result = await usersService.uploadCSV(file);
       toast({
         title: "Importação concluída",
-        description: `${result.message}. ${result.errors.length > 0 ? `${result.errors.length} erro(s) encontrado(s).` : ''}`,
+        description: `${result.message}. ${
+          result.errors.length > 0
+            ? `${result.errors.length} erro(s) encontrado(s).`
+            : ""
+        }`,
         variant: result.errors.length > 0 ? "default" : "success",
       });
 
       if (result.errors.length > 0) {
-        console.warn('Erros na importação:', result.errors);
+        console.warn("Erros na importação:", result.errors);
       }
 
       // Recarregar lista de usuários
       await loadData();
     } catch (error) {
-      console.error('Error uploading CSV:', error);
+      console.error("Error uploading CSV:", error);
       toast({
         title: "Erro ao importar",
-        description: error instanceof Error ? error.message : "Não foi possível importar o arquivo CSV",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Não foi possível importar o arquivo CSV",
         variant: "destructive",
       });
     } finally {
       setIsUploading(false);
       // Limpar input
       if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+        fileInputRef.current.value = "";
       }
     }
   };
