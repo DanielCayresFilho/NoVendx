@@ -550,6 +550,11 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       return { error: 'Usuário não autenticado' };
     }
 
+    // Log inicial para debug
+    const isGroupDebug = data.contactPhone?.includes('@g.us') || false;
+    console.log(`📨 [WebSocket] handleSendMessage - User: ${user.name}, ContactPhone: ${data.contactPhone}, IsGroup: ${isGroupDebug}, MessageType: ${data.messageType || 'text'}`);
+
+
     // Buscar linha atual do operador (pode estar na tabela LineOperator ou no campo legacy)
     let currentLineId = user.line;
     if (!currentLineId) {
@@ -876,30 +881,38 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     }
 
     try {
-      // Verificar CPC
-      const cpcCheck = await this.controlPanelService.canContactCPC(data.contactPhone, user.segment);
-      if (!cpcCheck.allowed) {
-        return { error: cpcCheck.reason };
-      }
+      // Detectar se é grupo (grupos têm @g.us no contactPhone)
+      const isGroup = data.contactPhone?.includes('@g.us') || false;
 
-      // Verificar repescagem
-      const repescagemCheck = await this.controlPanelService.checkRepescagem(
-        data.contactPhone,
-        user.id,
-        user.segment
-      );
-      if (!repescagemCheck.allowed) {
-        return { error: repescagemCheck.reason };
-      }
+      // IMPORTANTE: Verificações de CPC, repescagem e validação são APENAS para contatos individuais
+      if (!isGroup) {
+        // Verificar CPC
+        const cpcCheck = await this.controlPanelService.canContactCPC(data.contactPhone, user.segment);
+        if (!cpcCheck.allowed) {
+          return { error: cpcCheck.reason };
+        }
 
-      // Normalizar telefone (remover espaços, hífens, adicionar 55 se necessário)
-      const normalizedPhone = this.phoneValidationService.cleanPhone(data.contactPhone);
-      data.contactPhone = normalizedPhone;
-      
-      // Validação de número: Verificar se o número é válido antes de enviar
-      const phoneValidation = this.phoneValidationService.isValidFormat(data.contactPhone);
-      if (!phoneValidation) {
-        return { error: 'Número de telefone inválido' };
+        // Verificar repescagem
+        const repescagemCheck = await this.controlPanelService.checkRepescagem(
+          data.contactPhone,
+          user.id,
+          user.segment
+        );
+        if (!repescagemCheck.allowed) {
+          return { error: repescagemCheck.reason };
+        }
+
+        // Normalizar telefone (remover espaços, hífens, adicionar 55 se necessário)
+        const normalizedPhone = this.phoneValidationService.cleanPhone(data.contactPhone);
+        data.contactPhone = normalizedPhone;
+
+        // Validação de número: Verificar se o número é válido antes de enviar
+        const phoneValidation = this.phoneValidationService.isValidFormat(data.contactPhone);
+        if (!phoneValidation) {
+          return { error: 'Número de telefone inválido' };
+        }
+      } else {
+        console.log(`📱 [WebSocket] Enviando mensagem para GRUPO: ${data.contactPhone}`);
       }
 
       // Buscar linha atual do operador (sempre usar a linha atual, não a linha antiga da conversa)
@@ -1522,9 +1535,8 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         }
       } else {
         // Mensagem de texto normal - usar realocação automática se necessário
-        // Verificar se é grupo (groupId contém @g.us) ou contato individual
-        const isGroup = data.contactPhone?.includes('@g.us') || false;
-        const targetNumber = isGroup 
+        // isGroup já foi definido no início do try block (linha ~880)
+        const targetNumber = isGroup
           ? data.contactPhone // Para grupos, usar o groupId completo (ex: 120363123456789012@g.us)
           : data.contactPhone.replace(/\D/g, ''); // Para contatos, limpar número
         
@@ -1550,9 +1562,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         });
       }
 
-      // Verificar se é grupo
-      const isGroup = data.contactPhone?.includes('@g.us') || false;
-      
+      // isGroup já foi definido no início do try block (linha ~880)
       // Buscar contato (para grupos, usar groupId como phone)
       const contact = await this.prisma.contact.findFirst({
         where: { phone: data.contactPhone },
@@ -1611,14 +1621,17 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       );
       
       // Emitir mensagem para o usuário (usar mesmo formato que new_message)
+      console.log(`✅ [WebSocket] Emitindo message-sent para ${user.name} - ContactPhone: ${data.contactPhone}, IsGroup: ${isGroup}`);
       client.emit('message-sent', { message: conversation });
 
       // Se houver supervisores online do mesmo segmento, enviar para eles também
       this.emitToSupervisors(user.segment, 'new_message', { message: conversation });
 
+      const endTime = Date.now();
+      console.log(`⏱️ [WebSocket] handleSendMessage concluído em ${endTime - startTime}ms - User: ${user.name}, ContactPhone: ${data.contactPhone}`);
       return { success: true, conversation };
     } catch (error: any) {
-      console.error('❌ [WebSocket] Erro ao enviar mensagem:', {
+      console.error(`❌ [WebSocket] ERRO ao enviar mensagem - User: ${user.name}, ContactPhone: ${data.contactPhone}, IsGroup: ${data.contactPhone?.includes('@g.us')}`, {
         status: error.response?.status,
         statusText: error.response?.statusText,
         data: JSON.stringify(error.response?.data, null, 2),
