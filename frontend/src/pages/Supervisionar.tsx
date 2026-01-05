@@ -7,10 +7,13 @@ import {
   Loader2,
   FileText,
   Download,
+  Search,
 } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -47,6 +50,7 @@ export default function Supervisionar() {
     useState<ConversationGroup | null>(null);
   const [selectedOperator, setSelectedOperator] = useState("all");
   const [isLoading, setIsLoading] = useState(true);
+  const [operatorSearch, setOperatorSearch] = useState("");
 
   const { user } = useAuth();
 
@@ -189,6 +193,10 @@ export default function Supervisionar() {
           return operator && c.operatorName === operator.name;
         });
 
+  const filteredOperators = operators.filter((op) =>
+    op.name.toLowerCase().includes(operatorSearch.toLowerCase())
+  );
+
   const formatTime = (datetime: string) => {
     try {
       return format(new Date(datetime), "HH:mm");
@@ -205,6 +213,15 @@ export default function Supervisionar() {
           {/* Header */}
           <div className="p-4 border-b border-border/50 space-y-3">
             <h2 className="font-semibold text-foreground">Supervisionar</h2>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+              <Input
+                placeholder="Buscar operador..."
+                value={operatorSearch}
+                onChange={(e) => setOperatorSearch(e.target.value)}
+                className="pl-10"
+              />
+            </div>
             <Select
               value={selectedOperator}
               onValueChange={setSelectedOperator}
@@ -222,7 +239,7 @@ export default function Supervisionar() {
                 {user?.role !== "supervisor" && (
                   <SelectItem value="all">Todos os Operadores</SelectItem>
                 )}
-                {operators.map((op) => (
+                {filteredOperators.map((op) => (
                   <SelectItem key={op.id} value={op.id.toString()}>
                     {op.name}
                   </SelectItem>
