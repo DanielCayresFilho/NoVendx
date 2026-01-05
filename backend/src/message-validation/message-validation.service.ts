@@ -54,7 +54,8 @@ export class MessageValidationService {
       }
 
       // 2. Validação de permissão 1x1 (se for nova conversa)
-      if (isNewConversation && !user.oneToOneActive) {
+      // Administradores sempre têm permissão de 1x1
+      if (isNewConversation && !user.oneToOneActive && user.role !== 'admin') {
         this.logger.warn(
           `Operador ${user.name} sem permissão para 1x1`,
           'MessageValidation',

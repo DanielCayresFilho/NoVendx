@@ -421,9 +421,9 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         }
       }
 
-      // Enviar conversas ativas ao conectar (apenas para operators)
+      // Enviar conversas ativas ao conectar (para operators e admins)
       // Buscar por userId mesmo se não tiver linha, pois as conversas estão vinculadas ao operador
-      if (user.role === 'operator') {
+      if (user.role === 'operator' || user.role === 'admin') {
         // Buscar conversas apenas por userId (não por userLine)
         // Isso permite que as conversas continuem aparecendo mesmo se a linha foi banida
         const activeConversations = await this.conversationsService.findActiveConversations(undefined, user.id);
@@ -858,7 +858,8 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
     }
 
     // Verificar se é uma nova conversa (1x1) e se o operador tem permissão
-    if (data.isNewConversation) {
+    // Administradores sempre têm permissão de 1x1
+    if (data.isNewConversation && user.role !== 'admin') {
       const fullUser = await this.prisma.user.findUnique({
         where: { id: user.id },
         select: {
@@ -922,8 +923,9 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       }
 
       // Verificar se o segmento permite mensagem livre (APENAS para novas conversas 1x1)
+      // Administradores sempre podem enviar mensagens livres, independente do segmento
       // Se não permitir e não for template, bloquear envio apenas em novas conversas
-      if (data.isNewConversation && user.segment && !data.templateId) {
+      if (data.isNewConversation && user.segment && !data.templateId && user.role !== 'admin') {
         const segment = await this.prisma.segment.findUnique({
           where: { id: user.segment },
         });
