@@ -1074,14 +1074,15 @@ export class LinesService {
       const controlPanel = await this.controlPanelService.findOne();
       const sharedLineMode = controlPanel?.sharedLineMode ?? false;
 
+      // Contar operadores atuais (sempre necessário para verificar se é o primeiro)
+      const currentOperators = await tx.lineOperator.count({
+        where: { lineId },
+      });
+
       // Verificar se a linha já tem o máximo de operadores (com lock)
       // No modo compartilhado, não há limite de operadores
       if (!sharedLineMode) {
         // Linhas reserva aceitam apenas 1 operador, linhas normais aceitam 2
-        const currentOperators = await tx.lineOperator.count({
-          where: { lineId },
-        });
-
         const maxOperators = line.isReserve ? 1 : 2;
 
         if (currentOperators >= maxOperators) {

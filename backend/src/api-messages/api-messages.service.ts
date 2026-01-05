@@ -159,13 +159,20 @@ export class ApiMessagesService {
 
       // Para cada linha, verificar quantos operadores estão vinculados
       for (const line of filteredLines) {
+        let operatorsCount = 0;
+        
         // No modo compartilhado, não verificar limite de operadores
         if (!sharedLineMode) {
-          const operatorsCount = await (this.prisma as any).lineOperator.count({
+          operatorsCount = await (this.prisma as any).lineOperator.count({
             where: { lineId: line.id },
           });
 
           if (operatorsCount >= 2) continue;
+        } else {
+          // No modo compartilhado, ainda precisamos contar para verificar segmento
+          operatorsCount = await (this.prisma as any).lineOperator.count({
+            where: { lineId: line.id },
+          });
         }
 
         // Se tem operadores, verificar se são do mesmo segmento
@@ -208,9 +215,13 @@ export class ApiMessagesService {
         // Filtrar por evolutions ativas
         const filteredDefaultLines = await this.controlPanelService.filterLinesByActiveEvolutions(defaultLines, operator.segment || undefined);
 
+        // Verificar se o modo compartilhado está ativo (já foi verificado acima, mas garantir escopo)
+        const controlPanelDefault = await this.controlPanelService.findOne();
+        const sharedLineModeDefault = controlPanelDefault?.sharedLineMode ?? false;
+
         // Para cada linha, verificar se tem menos de 2 operadores (ou ignorar limite no modo compartilhado)
         for (const line of filteredDefaultLines) {
-          if (sharedLineMode) {
+          if (sharedLineModeDefault) {
             // No modo compartilhado, qualquer linha disponível serve
             availableLine = line;
             break;
