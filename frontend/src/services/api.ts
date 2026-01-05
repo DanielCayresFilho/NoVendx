@@ -102,7 +102,7 @@ export interface CreateUserData {
   name: string;
   email: string;
   password: string;
-  role: 'admin' | 'supervisor' | 'operator';
+  role: 'admin' | 'supervisor' | 'operator' | 'digital'; // ✅
   segment?: number;
   line?: number;
   status?: 'Online' | 'Offline';
@@ -114,7 +114,7 @@ export interface UpdateUserData {
   name?: string;
   email?: string;
   password?: string;
-  role?: 'admin' | 'supervisor' | 'operator';
+  role?: 'admin' | 'supervisor' | 'operator' | 'digital'; // ✅
   segment?: number | null;
   line?: number | null;
   status?: 'Online' | 'Offline';
