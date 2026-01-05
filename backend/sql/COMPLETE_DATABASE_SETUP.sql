@@ -778,6 +778,62 @@ END $$;
 COMMIT;
 
 -- ===================================================================
+-- PARTE 8: CRIAR USUÁRIO ADMIN PADRÃO
+-- ===================================================================
+-- IMPORTANTE: A senha precisa ser hasheada com argon2
+-- Execute o script Node.js create_admin_user.js após este SQL
+-- OU execute manualmente via backend (API ou seed)
+
+BEGIN;
+
+-- Criar usuário admin padrão
+-- Email: admin@taticamarketing.com.br
+-- Senha: Estreluda1.
+DO $$
+BEGIN
+  -- Verificar se o usuário já existe
+  IF NOT EXISTS (SELECT 1 FROM "User" WHERE "email" = 'admin@taticamarketing.com.br') THEN
+    -- Inserir usuário com senha hasheada (argon2)
+    INSERT INTO "User" (
+      "name",
+      "email",
+      "password",
+      "role",
+      "status",
+      "identifier",
+      "oneToOneActive"
+    ) VALUES (
+      'Admin',
+      'admin@taticamarketing.com.br',
+      '$argon2id$v=19$m=65536,t=3,p=4$si0tEOAckrmhi4wn+NEBFA$Nt0AQrJoBZ68rlEgArRvqpD8gW1i4Ez6DnG3zfkCLG0', -- Hash de 'Estreluda1.'
+      'admin',
+      'Offline',
+      'proprietario',
+      true
+    );
+    
+    RAISE NOTICE '✅ Usuário admin criado com sucesso!';
+    RAISE NOTICE '📧 Email: admin@taticamarketing.com.br';
+    RAISE NOTICE '🔑 Senha: Estreluda1.';
+  ELSE
+    -- Se já existe, atualizar a senha (caso tenha sido alterada)
+    UPDATE "User" 
+    SET 
+      "password" = '$argon2id$v=19$m=65536,t=3,p=4$si0tEOAckrmhi4wn+NEBFA$Nt0AQrJoBZ68rlEgArRvqpD8gW1i4Ez6DnG3zfkCLG0',
+      "name" = 'Admin',
+      "role" = 'admin',
+      "identifier" = 'proprietario',
+      "oneToOneActive" = true
+    WHERE "email" = 'admin@taticamarketing.com.br';
+    
+    RAISE NOTICE '✅ Usuário admin atualizado: admin@taticamarketing.com.br';
+    RAISE NOTICE '🔑 Senha resetada para: Estreluda1.';
+  END IF;
+END $$;
+
+COMMIT;
+
+-- ===================================================================
 -- FIM DO SETUP COMPLETO
 -- ===================================================================
 -- 
@@ -788,10 +844,10 @@ COMMIT;
 -- 2. Execute o Prisma generate para atualizar o client:
 --    npx prisma generate
 --
--- 3. (Opcional) Execute o seed para criar dados iniciais:
+-- 4. (Opcional) Execute o seed para criar dados iniciais:
 --    npm run prisma:seed
 --
--- 4. Inicie o backend:
+-- 5. Inicie o backend:
 --    npm run start:dev
 --
 -- ===================================================================
