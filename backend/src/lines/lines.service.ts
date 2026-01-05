@@ -893,43 +893,46 @@ export class LinesService {
       })),
     });
 
-    // Filtrar apenas operadores online
+    // Filtrar apenas usuários online (operadores, admins e supervisores)
     const onlineOperators = lineOperators
-      .filter(lo => lo.user.status === 'Online' && lo.user.role === 'operator')
+      .filter(lo => lo.user.status === 'Online' &&
+        (lo.user.role === 'operator' || lo.user.role === 'admin' || lo.user.role === 'supervisor'))
       .map(lo => lo.user);
 
-    console.log(`🔍 [LinesService] Operadores online na linha ${lineId}:`, {
+    console.log(`🔍 [LinesService] Usuários online na linha ${lineId}:`, {
       totalOnline: onlineOperators.length,
-      operadores: onlineOperators.map(op => ({
+      usuarios: onlineOperators.map(op => ({
         id: op.id,
         name: op.name,
         status: op.status,
+        role: op.role,
       })),
     });
 
     if (onlineOperators.length === 0) {
-      console.log(`⚠️ [LinesService] Nenhum operador online na linha ${lineId}`);
-      
-      // Verificar se há operadores vinculados mas offline
+      console.log(`⚠️ [LinesService] Nenhum usuário online na linha ${lineId}`);
+
+      // Verificar se há usuários vinculados mas offline
       const offlineOperators = lineOperators.filter(lo => lo.user.status !== 'Online');
       if (offlineOperators.length > 0) {
-        console.log(`ℹ️ [LinesService] Há ${offlineOperators.length} operador(es) vinculado(s) mas offline:`, 
+        console.log(`ℹ️ [LinesService] Há ${offlineOperators.length} usuário(s) vinculado(s) mas offline:`,
           offlineOperators.map(lo => `${lo.user.name} (${lo.user.status})`));
       }
-      
+
       // FALLBACK: Se não encontrou na tabela LineOperator, verificar campo legacy (linkedTo)
       const line = await this.prisma.linesStock.findUnique({
         where: { id: lineId },
       });
-      
+
       if (line && line.linkedTo) {
         const legacyOperator = await this.prisma.user.findUnique({
           where: { id: line.linkedTo },
         });
-        
-        if (legacyOperator && legacyOperator.status === 'Online' && legacyOperator.role === 'operator') {
-          console.log(`✅ [LinesService] Fallback: Encontrado operador legacy online: ${legacyOperator.name} (ID: ${legacyOperator.id})`);
-          
+
+        if (legacyOperator && legacyOperator.status === 'Online' &&
+          (legacyOperator.role === 'operator' || legacyOperator.role === 'admin' || legacyOperator.role === 'supervisor')) {
+          console.log(`✅ [LinesService] Fallback: Encontrado usuário legacy online: ${legacyOperator.name} (ID: ${legacyOperator.id}, Role: ${legacyOperator.role})`);
+
           // Sincronizar: criar entrada na tabela LineOperator
           const existingLink = await this.prisma.lineOperator.findFirst({
             where: {
