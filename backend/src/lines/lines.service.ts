@@ -758,6 +758,10 @@ export class LinesService {
   }
 
   async getAvailableLinesForOperator(operatorId: number) {
+    // Verificar se o modo compartilhado está ativo
+    const controlPanel = await this.controlPanelService.findOne();
+    const sharedLineMode = controlPanel?.sharedLineMode ?? false;
+
     // Buscar operador
     const operator = await this.prisma.user.findUnique({
       where: { id: operatorId },
@@ -779,8 +783,11 @@ export class LinesService {
       },
     });
 
-    // Filtrar linhas com menos de 2 operadores
-    availableLines = availableLines.filter(l => l.operators.length < 2);
+    // No modo compartilhado, não filtrar por quantidade de operadores
+    if (!sharedLineMode) {
+      // Filtrar linhas com menos de 2 operadores
+      availableLines = availableLines.filter(l => l.operators.length < 2);
+    }
 
     // Se não encontrou linhas do segmento, buscar linhas sem segmento (padrão)
     if (availableLines.length === 0) {
@@ -793,7 +800,13 @@ export class LinesService {
           operators: true,
         },
       });
-      availableLines = defaultLines.filter(l => l.operators.length < 2);
+      
+      // No modo compartilhado, não filtrar por quantidade de operadores
+      if (!sharedLineMode) {
+        availableLines = defaultLines.filter(l => l.operators.length < 2);
+      } else {
+        availableLines = defaultLines;
+      }
     }
 
     // Filtrar por evolutions ativas
