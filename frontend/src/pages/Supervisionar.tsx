@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Loader2,
   FileText,
+  Download,
 } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { MainLayout } from "@/components/layout/MainLayout";
@@ -320,11 +321,73 @@ export default function Supervisionar() {
                     </p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground">Atendente</p>
-                  <p className="text-sm font-medium text-warning">
-                    {selectedConversation.operatorName}
-                  </p>
+                <div className="flex items-center gap-2">
+                  {(user?.role === "admin" || user?.role === "digital") && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          const messages = selectedConversation.messages || [];
+                          const conversationText = messages
+                            .map((msg) => {
+                              const date = format(
+                                new Date(msg.datetime),
+                                "dd/MM/yyyy HH:mm:ss"
+                              );
+                              const sender =
+                                msg.sender === "operator"
+                                  ? "Operador"
+                                  : "Cliente";
+                              return `[${date}] ${sender}: ${
+                                msg.message || "(mídia)"
+                              }`;
+                            })
+                            .join("\n\n");
+
+                          const fullText = `Conversa com ${selectedConversation.contactName} (${selectedConversation.contactPhone})\n\n${conversationText}`;
+
+                          // Criar blob e download
+                          const blob = new Blob([fullText], {
+                            type: "text/plain",
+                          });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = `conversa-${
+                            selectedConversation.contactPhone
+                          }-${format(new Date(), "yyyy-MM-dd")}.txt`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          URL.revokeObjectURL(url);
+
+                          toast({
+                            title: "Download iniciado",
+                            description: "Conversa baixada com sucesso",
+                          });
+                        } catch (error) {
+                          toast({
+                            title: "Erro ao baixar",
+                            description:
+                              error instanceof Error
+                                ? error.message
+                                : "Erro ao baixar conversa",
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Baixar TXT
+                    </Button>
+                  )}
+                  <div className="text-right">
+                    <p className="text-xs text-muted-foreground">Atendente</p>
+                    <p className="text-sm font-medium text-warning">
+                      {selectedConversation.operatorName}
+                    </p>
+                  </div>
                 </div>
               </div>
 
