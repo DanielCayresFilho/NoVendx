@@ -15,7 +15,9 @@
       "Bash(git -C /home/unix/git/newvend log --oneline)",
       "Bash(npm run build:*)",
       "Bash(npx tsc:*)",
-      "Bash(tail:*)"
+      "Bash(tail:*)",
+      "Bash(cat:*)",
+      "Bash(psql:*)"
     ]
   }
 }

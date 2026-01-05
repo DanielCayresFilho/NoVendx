@@ -1023,12 +1023,15 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               orderBy: { datetime: 'desc' },
             });
 
-            // Registrar mensagem do operador para controle de repescagem
-            await this.controlPanelService.registerOperatorMessage(
-              data.contactPhone,
-              user.id,
-              user.segment
-            );
+            // Registrar mensagem do operador para controle de repescagem (apenas para contatos individuais)
+            const isGroupTemplate = data.contactPhone?.includes('@g.us') || false;
+            if (!isGroupTemplate) {
+              await this.controlPanelService.registerOperatorMessage(
+                data.contactPhone,
+                user.id,
+                user.segment
+              );
+            }
 
             // Registrar evento de mensagem enviada
             await this.systemEventsService.logEvent(
@@ -1574,20 +1577,22 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         groupName: isGroup ? (contact?.name || `Grupo ${data.contactPhone}`) : undefined,
       });
 
-      // Criar/atualizar vínculo de 24 horas entre conversa e operador
-      if (currentLineId) {
+      // Criar/atualizar vínculo de 24 horas entre conversa e operador (apenas para contatos individuais, não grupos)
+      if (currentLineId && !isGroup) {
         await this.createOrUpdateConversationBinding(data.contactPhone, currentLineId, user.id);
       }
 
       // Log apenas para mensagens enviadas com sucesso (fluxo principal)
-      console.log(`✅ Mensagem enviada: ${user.name} → ${data.contactPhone}`);
-      
-      // Registrar mensagem do operador para controle de repescagem
-      await this.controlPanelService.registerOperatorMessage(
-        data.contactPhone,
-        user.id,
-        user.segment
-      );
+      console.log(`✅ Mensagem enviada: ${user.name} → ${data.contactPhone}${isGroup ? ' (grupo)' : ''}`);
+
+      // Registrar mensagem do operador para controle de repescagem (apenas para contatos individuais, não grupos)
+      if (!isGroup) {
+        await this.controlPanelService.registerOperatorMessage(
+          data.contactPhone,
+          user.id,
+          user.segment
+        );
+      }
       
       // Registrar evento de mensagem enviada
       await this.systemEventsService.logEvent(
@@ -1851,15 +1856,18 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
           mediaUrl: data.mediaUrl,
         });
         
-        // Criar/atualizar vínculo de 24 horas entre conversa e operador
-        await this.createOrUpdateConversationBinding(data.contactPhone, newLine.id, user.id);
-        
-        // Registrar mensagem do operador
-        await this.controlPanelService.registerOperatorMessage(
-          data.contactPhone,
-          user.id,
-          user.segment
-        );
+        // Criar/atualizar vínculo de 24 horas entre conversa e operador (apenas para contatos individuais)
+        const isGroupRetry = data.contactPhone?.includes('@g.us') || false;
+        if (!isGroupRetry) {
+          await this.createOrUpdateConversationBinding(data.contactPhone, newLine.id, user.id);
+
+          // Registrar mensagem do operador
+          await this.controlPanelService.registerOperatorMessage(
+            data.contactPhone,
+            user.id,
+            user.segment
+          );
+        }
         
         // Emitir mensagem para o usuário
         client.emit('message-sent', { message: conversation });
