@@ -308,7 +308,7 @@ export class WebhooksService {
 
         // Criar conversa
         const conversation = await this.conversationsService.create({
-          contactName: isGroup ? (participantName || contact.name) : contact.name,
+          contactName: isGroup ? (groupName || contact.name) : contact.name, // Para grupos, usar nome do grupo
           contactPhone: from,
           segment: line.segment,
           userName: finalOperatorId ? line.operators.find(lo => lo.userId === finalOperatorId)?.user.name || null : null,
@@ -321,7 +321,7 @@ export class WebhooksService {
           isGroup,
           groupId: groupId || undefined,
           groupName: isGroup ? groupName : undefined,
-          participantName: isGroup ? participantName : undefined,
+          participantName: isGroup ? participantName : undefined, // Nome de quem enviou no grupo
         });
 
         // Criar/atualizar vínculo de 24 horas entre conversa e operador (garantia adicional)
