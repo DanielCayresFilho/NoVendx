@@ -43,6 +43,7 @@ export class ControlPanelService {
             autoMessageHours: 24,
             autoMessageText: null,
             autoMessageMaxAttempts: 1,
+            sharedLineMode: false, // Modo compartilhado desativado por padrão
           };
         }
 

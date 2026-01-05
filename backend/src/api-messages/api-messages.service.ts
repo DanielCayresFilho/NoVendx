@@ -153,13 +153,20 @@ export class ApiMessagesService {
       // Filtrar por evolutions ativas
       const filteredLines = await this.controlPanelService.filterLinesByActiveEvolutions(segmentLines, operator.segment);
 
+      // Verificar se o modo compartilhado está ativo
+      const controlPanel = await this.controlPanelService.findOne();
+      const sharedLineMode = controlPanel?.sharedLineMode ?? false;
+
       // Para cada linha, verificar quantos operadores estão vinculados
       for (const line of filteredLines) {
-        const operatorsCount = await (this.prisma as any).lineOperator.count({
-          where: { lineId: line.id },
-        });
+        // No modo compartilhado, não verificar limite de operadores
+        if (!sharedLineMode) {
+          const operatorsCount = await (this.prisma as any).lineOperator.count({
+            where: { lineId: line.id },
+          });
 
-        if (operatorsCount >= 2) continue;
+          if (operatorsCount >= 2) continue;
+        }
 
         // Se tem operadores, verificar se são do mesmo segmento
         if (operatorsCount > 0) {
@@ -201,15 +208,21 @@ export class ApiMessagesService {
         // Filtrar por evolutions ativas
         const filteredDefaultLines = await this.controlPanelService.filterLinesByActiveEvolutions(defaultLines, operator.segment || undefined);
 
-        // Para cada linha, verificar se tem menos de 2 operadores
+        // Para cada linha, verificar se tem menos de 2 operadores (ou ignorar limite no modo compartilhado)
         for (const line of filteredDefaultLines) {
-          const operatorsCount = await (this.prisma as any).lineOperator.count({
-            where: { lineId: line.id },
-          });
-
-          if (operatorsCount < 2) {
+          if (sharedLineMode) {
+            // No modo compartilhado, qualquer linha disponível serve
             availableLine = line;
             break;
+          } else {
+            const operatorsCount = await (this.prisma as any).lineOperator.count({
+              where: { lineId: line.id },
+            });
+
+            if (operatorsCount < 2) {
+              availableLine = line;
+              break;
+            }
           }
         }
       }

@@ -360,6 +360,7 @@ CREATE TABLE IF NOT EXISTS "ControlPanel" (
   "autoMessageHours" INTEGER NOT NULL DEFAULT 24,
   "autoMessageText" TEXT,
   "autoMessageMaxAttempts" INTEGER NOT NULL DEFAULT 1,
+  "sharedLineMode" BOOLEAN NOT NULL DEFAULT false,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "ControlPanel_pkey" PRIMARY KEY ("id"),

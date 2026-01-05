@@ -1070,20 +1070,27 @@ export class LinesService {
         throw new BadRequestException(`Linha da evolution '${line.evolutionName}' não está ativa para atribuição`);
       }
 
+      // Verificar se o modo compartilhado está ativo
+      const controlPanel = await this.controlPanelService.findOne();
+      const sharedLineMode = controlPanel?.sharedLineMode ?? false;
+
       // Verificar se a linha já tem o máximo de operadores (com lock)
-      // Linhas reserva aceitam apenas 1 operador, linhas normais aceitam 2
-      const currentOperators = await tx.lineOperator.count({
-        where: { lineId },
-      });
+      // No modo compartilhado, não há limite de operadores
+      if (!sharedLineMode) {
+        // Linhas reserva aceitam apenas 1 operador, linhas normais aceitam 2
+        const currentOperators = await tx.lineOperator.count({
+          where: { lineId },
+        });
 
-      const maxOperators = line.isReserve ? 1 : 2;
+        const maxOperators = line.isReserve ? 1 : 2;
 
-      if (currentOperators >= maxOperators) {
-        throw new BadRequestException(
-          line.isReserve
-            ? 'Linha reserva já possui 1 operador vinculado (máximo permitido)'
-            : 'Linha já possui o máximo de 2 operadores vinculados'
-        );
+        if (currentOperators >= maxOperators) {
+          throw new BadRequestException(
+            line.isReserve
+              ? 'Linha reserva já possui 1 operador vinculado (máximo permitido)'
+              : 'Linha já possui o máximo de 2 operadores vinculados'
+          );
+        }
       }
 
       // Verificar se o operador já está vinculado a esta linha
@@ -1101,15 +1108,18 @@ export class LinesService {
       }
 
       // Verificar se operador já tem outra linha
-      const operatorCurrentLine = await tx.lineOperator.findFirst({
-        where: { userId },
-      });
-
-      if (operatorCurrentLine && operatorCurrentLine.lineId !== lineId) {
-        // Desvincular da linha anterior
-        await tx.lineOperator.deleteMany({
-          where: { userId, lineId: operatorCurrentLine.lineId },
+      // No modo compartilhado, não desvincular da linha anterior (permite múltiplas linhas)
+      if (!sharedLineMode) {
+        const operatorCurrentLine = await tx.lineOperator.findFirst({
+          where: { userId },
         });
+
+        if (operatorCurrentLine && operatorCurrentLine.lineId !== lineId) {
+          // Desvincular da linha anterior
+          await tx.lineOperator.deleteMany({
+            where: { userId, lineId: operatorCurrentLine.lineId },
+          });
+        }
       }
 
       // Criar vínculo
@@ -1143,6 +1153,15 @@ export class LinesService {
 
   // Desvincular operador da linha
   async unassignOperatorFromLine(lineId: number, userId: number): Promise<void> {
+    // Verificar se o modo compartilhado está ativo
+    const controlPanel = await this.controlPanelService.findOne();
+    const sharedLineMode = controlPanel?.sharedLineMode ?? false;
+
+    // No modo compartilhado, não permitir desvinculação manual
+    if (sharedLineMode) {
+      throw new BadRequestException('Desvinculação não permitida no modo de linha compartilhada');
+    }
+
     await this.prisma.lineOperator.deleteMany({
       where: {
         lineId,
