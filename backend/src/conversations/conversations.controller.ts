@@ -267,20 +267,31 @@ export class ConversationsController {
   }
 
   @Get("download-pdf/:phone")
-  @Roles(Role.admin, Role.digital)
+  @Roles(Role.admin, Role.supervisor, Role.digital)
   async downloadConversationPdf(
     @Param("phone") phone: string,
     @Res() res: Response,
     @CurrentUser() user: any
   ) {
     try {
-      // Buscar conversa completa
+      console.log(
+        `📄 [GET /conversations/download-pdf/${phone}] Gerando PDF para conversa`
+      );
+
+      // Buscar conversa completa (admin, supervisor e digital podem baixar qualquer conversa)
       const conversation = await this.conversationsService.findByContactPhone(
         phone,
         false
       );
 
+      console.log(
+        `📄 Encontradas ${
+          conversation?.length || 0
+        } mensagens para o telefone ${phone}`
+      );
+
       if (!conversation || conversation.length === 0) {
+        console.log(`📄 Conversa não encontrada para telefone ${phone}`);
         return res.status(404).json({ message: "Conversa não encontrada" });
       }
 
@@ -288,6 +299,10 @@ export class ConversationsController {
       const contact = await this.prisma.contact.findUnique({
         where: { phone },
       });
+
+      console.log(
+        `📄 Iniciando geração do PDF com ${conversation.length} mensagens`
+      );
 
       // Criar PDF
       const doc = new PDFDocument({
@@ -304,8 +319,10 @@ export class ConversationsController {
         }.pdf`
       );
 
-      // Pipe do PDF para a resposta
+      // Pipe do PDF diretamente para a resposta
       doc.pipe(res);
+
+      console.log(`📄 Headers configurados, iniciando escrita do PDF`);
 
       // Título
       doc.fontSize(20).text("Conversa", { align: "center" });
@@ -354,9 +371,13 @@ export class ConversationsController {
 
       // Finalizar PDF
       doc.end();
+
+      console.log(`📄 PDF gerado com sucesso para conversa ${phone}`);
     } catch (error) {
-      console.error("Erro ao gerar PDF:", error);
-      res.status(500).json({ message: "Erro ao gerar PDF da conversa" });
+      console.error("❌ Erro ao gerar PDF:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ message: "Erro ao gerar PDF da conversa" });
+      }
     }
   }
 }
