@@ -85,6 +85,7 @@ export class ControlPanelService {
       autoMessageHours: dto.autoMessageHours,
       autoMessageText: dto.autoMessageText,
       autoMessageMaxAttempts: dto.autoMessageMaxAttempts,
+      sharedLineMode: dto.sharedLineMode,
     };
 
     // Remover campos undefined

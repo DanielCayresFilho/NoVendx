@@ -140,6 +140,15 @@ export class UpdateControlPanelDto {
   @IsNumber()
   @IsOptional()
   autoMessageMaxAttempts?: number;
+
+  // Modo de linha compartilhada
+  @Transform(({ value }) => {
+    if (value === null || value === undefined || value === '') return false;
+    return Boolean(value);
+  })
+  @IsBoolean()
+  @IsOptional()
+  sharedLineMode?: boolean;
 }
 
 export class AddBlockPhraseDto {

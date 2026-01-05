@@ -26,6 +26,7 @@ export class ControlPanelController {
   @Post()
   @Roles(Role.admin, Role.supervisor)
   async upsert(@Body() dto: UpdateControlPanelDto) {
+    console.log('[ControlPanel] Recebendo atualização:', JSON.stringify(dto, null, 2));
     return this.controlPanelService.upsert(dto);
   }
 
