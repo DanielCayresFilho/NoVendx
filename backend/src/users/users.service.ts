@@ -1,10 +1,15 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
-import { PrismaService } from '../prisma.service';
-import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
-import * as argon2 from 'argon2';
-import csv from 'csv-parser';
-import { Readable } from 'stream';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from "@nestjs/common";
+import { PrismaService } from "../prisma.service";
+import { CreateUserDto } from "./dto/create-user.dto";
+import { UpdateUserDto } from "./dto/update-user.dto";
+import * as argon2 from "argon2";
+import csv from "csv-parser";
+import { Readable } from "stream";
 
 @Injectable()
 export class UsersService {
@@ -16,7 +21,7 @@ export class UsersService {
     });
 
     if (existingUser) {
-      throw new ConflictException('Email já está em uso');
+      throw new ConflictException("Email já está em uso");
     }
 
     const hashedPassword = await argon2.hash(createUserDto.password);
@@ -31,18 +36,36 @@ export class UsersService {
 
   async findAll(filters?: any) {
     // Remover campos inválidos que não existem no schema
-    const { search, ...validFilters } = filters || {};
-    
+    const { search, emailDomain, ...validFilters } = filters || {};
+
+    // Converter filtros numéricos de string para number
+    const convertedFilters = { ...validFilters };
+    if (convertedFilters.segment !== undefined) {
+      convertedFilters.segment = convertedFilters.segment
+        ? parseInt(convertedFilters.segment)
+        : null;
+    }
+    if (convertedFilters.line !== undefined) {
+      convertedFilters.line = convertedFilters.line
+        ? parseInt(convertedFilters.line)
+        : null;
+    }
+
+    // Adicionar filtro por domínio de email se fornecido
+    if (emailDomain) {
+      convertedFilters.email = { endsWith: emailDomain };
+    }
+
     // Se houver busca por texto, aplicar filtros
-    const where = search 
+    const where = search
       ? {
-          ...validFilters,
+          ...convertedFilters,
           OR: [
-            { name: { contains: search, mode: 'insensitive' } },
-            { email: { contains: search, mode: 'insensitive' } },
+            { name: { contains: search, mode: "insensitive" } },
+            { email: { contains: search, mode: "insensitive" } },
           ],
         }
-      : validFilters;
+      : convertedFilters;
 
     return this.prisma.user.findMany({
       where,
@@ -61,7 +84,7 @@ export class UsersService {
         // Não retornar password
       },
       orderBy: {
-        createdAt: 'desc',
+        createdAt: "desc",
       },
     });
   }
@@ -83,9 +106,9 @@ export class UsersService {
 
     // Limpar campos vazios
     const cleanData: any = { ...updateUserDto };
-    
+
     // Remover password se estiver vazio/undefined
-    if (!cleanData.password || cleanData.password === '') {
+    if (!cleanData.password || cleanData.password === "") {
       delete cleanData.password;
     } else {
       // Hash da senha apenas se foi fornecida
@@ -93,10 +116,10 @@ export class UsersService {
     }
 
     // Converter strings vazias para null nos campos numéricos opcionais
-    if (cleanData.segment === '' || cleanData.segment === undefined) {
+    if (cleanData.segment === "" || cleanData.segment === undefined) {
       cleanData.segment = null;
     }
-    if (cleanData.line === '' || cleanData.line === undefined) {
+    if (cleanData.line === "" || cleanData.line === undefined) {
       cleanData.line = null;
     }
 
@@ -109,7 +132,7 @@ export class UsersService {
       cleanData.oneToOneActive = Boolean(cleanData.oneToOneActive);
     }
 
-    console.log('💾 Dados limpos para atualizar:', cleanData);
+    console.log("💾 Dados limpos para atualizar:", cleanData);
 
     return this.prisma.user.update({
       where: { id },
@@ -142,8 +165,8 @@ export class UsersService {
   async getOnlineOperators(segment?: number) {
     const operators = await this.prisma.user.findMany({
       where: {
-        role: 'operator',
-        status: 'Online',
+        role: "operator",
+        status: "Online",
         ...(segment && { segment }),
       },
       include: {
@@ -163,11 +186,11 @@ export class UsersService {
 
     // Buscar segmentos para incluir nomes
     const segments = await this.prisma.segment.findMany();
-    const segmentMap = new Map(segments.map(s => [s.id, s]));
+    const segmentMap = new Map(segments.map((s) => [s.id, s]));
 
     // Transformar dados para incluir informações de linha e segmento
-    return operators.map(operator => {
-      const lines = operator.lineOperators.map(lo => ({
+    return operators.map((operator) => {
+      const lines = operator.lineOperators.map((lo) => ({
         id: lo.line.id,
         phone: lo.line.phone,
         lineStatus: lo.line.lineStatus,
@@ -179,7 +202,9 @@ export class UsersService {
         email: operator.email,
         role: operator.role,
         segment: operator.segment,
-        segmentName: operator.segment ? segmentMap.get(operator.segment)?.name : null,
+        segmentName: operator.segment
+          ? segmentMap.get(operator.segment)?.name
+          : null,
         status: operator.status,
         lines: lines,
         oneToOneActive: operator.oneToOneActive,
@@ -190,9 +215,11 @@ export class UsersService {
     });
   }
 
-  async importFromCSV(file: Express.Multer.File): Promise<{ success: number; errors: string[] }> {
+  async importFromCSV(
+    file: Express.Multer.File
+  ): Promise<{ success: number; errors: string[] }> {
     if (!file || !file.buffer) {
-      throw new BadRequestException('Arquivo CSV não fornecido');
+      throw new BadRequestException("Arquivo CSV não fornecido");
     }
 
     const results: any[] = [];
@@ -200,28 +227,34 @@ export class UsersService {
     let successCount = 0;
 
     return new Promise((resolve, reject) => {
-      const stream = Readable.from(file.buffer.toString('utf-8'));
-      
+      const stream = Readable.from(file.buffer.toString("utf-8"));
+
       stream
-        .pipe(csv({ separator: ';' }))
-        .on('data', (data) => {
+        .pipe(csv({ separator: ";" }))
+        .on("data", (data) => {
           // Filtrar linhas vazias manualmente
-          const hasData = Object.values(data).some(value => value && String(value).trim() !== '');
+          const hasData = Object.values(data).some(
+            (value) => value && String(value).trim() !== ""
+          );
           if (hasData) {
             results.push(data);
           }
         })
-        .on('end', async () => {
+        .on("end", async () => {
           console.log(`📊 Processando ${results.length} linhas do CSV`);
 
           for (const row of results) {
             try {
-              const name = row['Nome']?.trim();
-              const email = row['E-mail']?.trim() || row['Email']?.trim();
-              const segmentName = row['Segmento']?.trim();
+              const name = row["Nome"]?.trim();
+              const email = row["E-mail"]?.trim() || row["Email"]?.trim();
+              const segmentName = row["Segmento"]?.trim();
 
               if (!name || !email) {
-                errors.push(`Linha ignorada: Nome ou E-mail vazio (${name || 'sem nome'}, ${email || 'sem email'})`);
+                errors.push(
+                  `Linha ignorada: Nome ou E-mail vazio (${
+                    name || "sem nome"
+                  }, ${email || "sem email"})`
+                );
                 continue;
               }
 
@@ -242,7 +275,7 @@ export class UsersService {
                   where: {
                     name: {
                       contains: segmentName,
-                      mode: 'insensitive',
+                      mode: "insensitive",
                     },
                   },
                 });
@@ -250,13 +283,15 @@ export class UsersService {
                 if (segment) {
                   segmentId = segment.id;
                 } else {
-                  errors.push(`Segmento não encontrado: ${segmentName} (usuário: ${email})`);
+                  errors.push(
+                    `Segmento não encontrado: ${segmentName} (usuário: ${email})`
+                  );
                   // Continuar criando o usuário sem segmento
                 }
               }
 
               // Criar usuário (padrão: operador, senha inicial = #Pasch@20.25)
-              const defaultPassword = '@Pasc2025';
+              const defaultPassword = "@Pasc2025";
               const hashedPassword = await argon2.hash(defaultPassword);
 
               await this.prisma.user.create({
@@ -264,7 +299,7 @@ export class UsersService {
                   name,
                   email,
                   password: hashedPassword,
-                  role: 'operator',
+                  role: "operator",
                   segment: segmentId,
                 },
               });
@@ -272,16 +307,19 @@ export class UsersService {
               successCount++;
               console.log(`✅ Usuário criado: ${name} (${email})`);
             } catch (error) {
-              const errorMsg = error instanceof Error ? error.message : 'Erro desconhecido';
+              const errorMsg =
+                error instanceof Error ? error.message : "Erro desconhecido";
               errors.push(`Erro ao processar linha: ${errorMsg}`);
-              console.error('❌ Erro ao processar linha do CSV:', error);
+              console.error("❌ Erro ao processar linha do CSV:", error);
             }
           }
 
           resolve({ success: successCount, errors });
         })
-        .on('error', (error) => {
-          reject(new BadRequestException(`Erro ao processar CSV: ${error.message}`));
+        .on("error", (error) => {
+          reject(
+            new BadRequestException(`Erro ao processar CSV: ${error.message}`)
+          );
         });
     });
   }

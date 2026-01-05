@@ -54,6 +54,12 @@ export default function Supervisionar() {
       const params: any = { role: "operator" };
       if (user?.role === "supervisor" && user.segmentId) {
         params.segment = user.segmentId;
+      } // Para supervisor e digital, filtrar por domínio de email
+      if (user?.role === "supervisor" || user?.role === "digital") {
+        const emailDomain = user.email.split("@")[1];
+        if (emailDomain) {
+          params.emailDomain = `@${emailDomain}`;
+        }
       }
       const data = await usersService.list(params);
       setOperators(data);
@@ -154,6 +160,15 @@ export default function Supervisionar() {
     loadConversations();
   }, [loadOperators, loadConversations]);
 
+  // Set initial selectedOperator based on user role
+  useEffect(() => {
+    if (user?.role === "supervisor" && operators.length > 0) {
+      setSelectedOperator(operators[0].id.toString());
+    } else if (user?.role === "digital") {
+      setSelectedOperator("all");
+    }
+  }, [user, operators]);
+
   // Poll for new messages - intervalo maior para não sobrecarregar
   useEffect(() => {
     const interval = setInterval(() => {
@@ -194,10 +209,18 @@ export default function Supervisionar() {
               onValueChange={setSelectedOperator}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Todos os Operadores" />
+                <SelectValue
+                  placeholder={
+                    user?.role === "supervisor"
+                      ? "Selecione um Operador"
+                      : "Todos os Operadores"
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todos os Operadores</SelectItem>
+                {user?.role !== "supervisor" && (
+                  <SelectItem value="all">Todos os Operadores</SelectItem>
+                )}
                 {operators.map((op) => (
                   <SelectItem key={op.id} value={op.id.toString()}>
                     {op.name}
