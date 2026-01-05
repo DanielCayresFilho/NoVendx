@@ -46,18 +46,130 @@ export class ReportsService {
   }
 
   /**
+   * Helper: Aplicar filtro para excluir usuários com email contendo '@vend'
+   * Retorna array de IDs de usuários que devem ser excluídos
+   */
+  private async getExcludedVendUserIds(): Promise<number[]> {
+    const vendUsers = await this.prisma.user.findMany({
+      where: {
+        email: {
+          contains: '@vend',
+        },
+      },
+      select: { id: true },
+    });
+    return vendUsers.map(u => u.id);
+  }
+
+  /**
    * Helper: Aplicar filtro de identificador
    * Cliente só vê seus dados, proprietário vê tudo
    * SEMPRE filtra isAdminTest = false (ações de teste administrador não aparecem nos relatórios)
+   * SEMPRE exclui usuários com email contendo '@vend' (exceto para relatórios de linhas)
    */
   private async applyIdentifierFilter(
     whereClause: any,
     userIdentifier: 'cliente' | 'proprietario' | undefined,
-    filterType: 'conversation' | 'campaign' | 'user' | 'segment' | 'line'
+    filterType: 'conversation' | 'campaign' | 'user' | 'segment' | 'line',
+    excludeVendUsers: boolean = true
   ): Promise<any> {
     // SEMPRE filtrar ações de teste administrador (não aparecem nos relatórios)
     if (filterType === 'conversation' || filterType === 'campaign') {
       whereClause.isAdminTest = false;
+    }
+
+    // Excluir usuários com email contendo '@vend' (exceto para linhas)
+    if (excludeVendUsers && filterType !== 'line') {
+      const vendUserIds = await this.getExcludedVendUserIds();
+      if (vendUserIds.length > 0) {
+        if (filterType === 'conversation') {
+          // Para conversas, excluir se userId está na lista de vend
+          // IMPORTANTE: Se já existe filtro OR, precisamos adicionar o filtro de vend em cada condição OR
+          if (whereClause.OR && Array.isArray(whereClause.OR)) {
+            // Se tem OR, adicionar filtro de vend em cada condição OR que tenha userId
+            whereClause.OR = whereClause.OR.map((orCondition: any) => {
+              if (orCondition.userId) {
+                if (typeof orCondition.userId === 'object' && orCondition.userId.in) {
+                  orCondition.userId.in = orCondition.userId.in.filter((id: number) => !vendUserIds.includes(id));
+                  if (orCondition.userId.in.length === 0) {
+                    return { id: -1 }; // Filtro impossível para esta condição
+                  }
+                } else if (typeof orCondition.userId === 'number') {
+                  if (vendUserIds.includes(orCondition.userId)) {
+                    return { id: -1 }; // Filtro impossível para esta condição
+                  }
+                } else {
+                  orCondition.userId = {
+                    ...orCondition.userId,
+                    notIn: vendUserIds,
+                  };
+                }
+              } else {
+                // Adicionar filtro de vend nesta condição OR
+                orCondition.userId = {
+                  notIn: vendUserIds,
+                };
+              }
+              return orCondition;
+            });
+            // Remover condições impossíveis
+            whereClause.OR = whereClause.OR.filter((orCondition: any) => !(orCondition.id === -1));
+            // Se todas as condições OR foram removidas, retornar filtro impossível
+            if (whereClause.OR.length === 0) {
+              return { id: -1 };
+            }
+          } else if (whereClause.userId) {
+            // Se já tem filtro de userId, adicionar NOT IN
+            if (typeof whereClause.userId === 'object' && whereClause.userId.in) {
+              // Se já é um array, filtrar removendo vend users
+              whereClause.userId.in = whereClause.userId.in.filter((id: number) => !vendUserIds.includes(id));
+              // Se após filtrar não sobrou nenhum, retornar filtro impossível
+              if (whereClause.userId.in.length === 0) {
+                return { id: -1 };
+              }
+            } else if (typeof whereClause.userId === 'number') {
+              // Se é um número único, verificar se não é vend
+              if (vendUserIds.includes(whereClause.userId)) {
+                return { id: -1 }; // Filtro impossível
+              }
+            } else if (whereClause.userId.notIn) {
+              // Se já tem notIn, combinar com vendUserIds
+              const combinedNotIn = [...new Set([...whereClause.userId.notIn, ...vendUserIds])];
+              whereClause.userId.notIn = combinedNotIn;
+            } else {
+              // Adicionar NOT IN
+              whereClause.userId = {
+                ...whereClause.userId,
+                notIn: vendUserIds,
+              };
+            }
+          } else {
+            // Adicionar filtro para excluir vend users
+            whereClause.userId = {
+              notIn: vendUserIds,
+            };
+          }
+        } else if (filterType === 'user') {
+          // Para usuários, excluir diretamente por email
+          if (!whereClause.email) {
+            whereClause.email = {};
+          }
+          // Combinar com filtros existentes de email
+          const existingEmailFilters: any = {};
+          if (whereClause.email.endsWith) existingEmailFilters.endsWith = whereClause.email.endsWith;
+          if (whereClause.email.startsWith) existingEmailFilters.startsWith = whereClause.email.startsWith;
+          
+          // Adicionar filtro para excluir '@vend'
+          whereClause.email = {
+            ...existingEmailFilters,
+            not: {
+              contains: '@vend',
+            },
+          };
+        }
+        // Para campanhas, não há userId direto, mas podemos filtrar por linha se necessário
+        // (campanhas não têm userId, então não precisa filtrar aqui)
+      }
     }
 
     // Se não tem identificador ou é proprietário, não aplicar filtro adicional
@@ -593,8 +705,8 @@ export class ReportsService {
    * RELATÓRIO DE ENVIOS
    * Estrutura: data_envio, hora_envio, fornecedor_envio, codigo_carteira, nome_carteira, 
    * segmento_carteira, numero_contrato, cpf_cliente, telefone_cliente, status_envio, 
-   * numero_saida, login_usuario, template_envio, coringa_1, coringa_2, coringa_3, 
-   * coringa_4, tipo_envio, cliente_respondeu, qtd_mensagens_cliente, qtd_mensagens_operador
+   * numero_saida, login_usuario, template_envio, tipo_envio, cliente_respondeu, 
+   * qtd_mensagens_cliente, qtd_mensagens_operador
    */
   async getEnviosReport(filters: ReportFilterDto, userIdentifier?: 'cliente' | 'proprietario') {
     const whereClause: any = {};
@@ -735,10 +847,6 @@ export class ReportsService {
         numero_saida: line?.phone || null,
         login_usuario: null,
         template_envio: campaign.name,
-        coringa_1: null,
-        coringa_2: null,
-        coringa_3: null,
-        coringa_4: null,
         tipo_envio: 'Massivo',
         cliente_respondeu: metrics.clientResponded ? 'Verdadeiro' : 'Falso',
         qtd_mensagens_cliente: metrics.clientMessagesCount,
@@ -788,10 +896,6 @@ export class ReportsService {
         numero_saida: line?.phone || null,
         login_usuario: firstOperatorMessage.userName || null,
         template_envio: null,
-        coringa_1: null,
-        coringa_2: null,
-        coringa_3: null,
-        coringa_4: null,
         tipo_envio: '1:1',
         cliente_respondeu: metrics.clientResponded ? 'Verdadeiro' : 'Falso',
         qtd_mensagens_cliente: metrics.clientMessagesCount,
@@ -1215,6 +1319,9 @@ export class ReportsService {
         role: 'operator',
         email: {
           endsWith: '@paschoalotto.com.br',
+          not: {
+            contains: '@vend',
+          },
         },
       },
     });
@@ -1289,6 +1396,9 @@ export class ReportsService {
         line: { not: null },
         email: {
           endsWith: '@paschoalotto.com.br',
+          not: {
+            contains: '@vend',
+          },
         },
       },
     });
@@ -1816,6 +1926,9 @@ export class ReportsService {
     const whereClause: any = {
       email: {
         endsWith: '@paschoalotto.com.br',
+        not: {
+          contains: '@vend',
+        },
       },
     };
 
@@ -1848,6 +1961,17 @@ export class ReportsService {
         Carteira: segmentName, // Mesmo valor de Segmento
         'Login principal': loginPrincipal,
       };
+    });
+
+    // Ordenar por segmento (alfabético) e depois por nome
+    result.sort((a, b) => {
+      // Primeiro ordenar por segmento (case-insensitive)
+      const segmentCompare = a.Segmento.toLowerCase().localeCompare(b.Segmento.toLowerCase());
+      if (segmentCompare !== 0) {
+        return segmentCompare;
+      }
+      // Se segmento igual, ordenar por nome (case-insensitive)
+      return a.Nome.toLowerCase().localeCompare(b.Nome.toLowerCase());
     });
 
     // Normalizar todos os campos de texto do resultado
@@ -1986,6 +2110,9 @@ export class ReportsService {
         line: { not: null },
         email: {
           endsWith: '@paschoalotto.com.br',
+          not: {
+            contains: '@vend',
+          },
         },
       },
     });
