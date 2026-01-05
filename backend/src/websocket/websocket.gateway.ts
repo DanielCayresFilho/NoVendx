@@ -1519,15 +1519,19 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         }
       } else {
         // Mensagem de texto normal - usar realocação automática se necessário
-        const cleanPhone = data.contactPhone.replace(/\D/g, '');
+        // Verificar se é grupo (groupId contém @g.us) ou contato individual
+        const isGroup = data.contactPhone?.includes('@g.us') || false;
+        const targetNumber = isGroup 
+          ? data.contactPhone // Para grupos, usar o groupId completo (ex: 120363123456789012@g.us)
+          : data.contactPhone.replace(/\D/g, ''); // Para contatos, limpar número
         
         apiResponse = await tryReallocateAndResend(async () => {
-          console.log(`📤 [WebSocket] Enviando mensagem de texto para ${cleanPhone} via linha ${line.phone}`);
+          console.log(`📤 [WebSocket] Enviando mensagem de texto para ${isGroup ? 'grupo' : 'contato'} ${targetNumber} via linha ${line.phone}`);
           
           return await axios.post(
             `${evolution.evolutionUrl}/message/sendText/${instanceName}`,
             {
-              number: cleanPhone,
+              number: targetNumber,
               text: data.message,
             },
             {
@@ -1543,7 +1547,10 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         });
       }
 
-      // Buscar contato
+      // Verificar se é grupo
+      const isGroup = data.contactPhone?.includes('@g.us') || false;
+      
+      // Buscar contato (para grupos, usar groupId como phone)
       const contact = await this.prisma.contact.findFirst({
         where: { phone: data.contactPhone },
       });
@@ -1551,7 +1558,7 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       // Salvar conversa usando a linha ATUAL do operador
       // Isso garante que mesmo se a linha foi trocada, a mensagem vai pela linha atual
       const conversation = await this.conversationsService.create({
-        contactName: contact?.name || 'Desconhecido',
+        contactName: contact?.name || (isGroup ? `Grupo ${data.contactPhone}` : 'Desconhecido'),
         contactPhone: data.contactPhone,
         segment: user.segment,
         userName: user.name,
@@ -1562,6 +1569,9 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         messageType: data.messageType || 'text',
         mediaUrl: data.mediaUrl,
         isAdminTest: isAdminTest, // Marcar se é teste administrador
+        isGroup: isGroup,
+        groupId: isGroup ? data.contactPhone : undefined,
+        groupName: isGroup ? (contact?.name || `Grupo ${data.contactPhone}`) : undefined,
       });
 
       // Criar/atualizar vínculo de 24 horas entre conversa e operador

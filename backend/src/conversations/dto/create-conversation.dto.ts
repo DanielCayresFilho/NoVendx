@@ -49,4 +49,20 @@ export class CreateConversationDto {
   @IsBoolean()
   @IsOptional()
   isAdminTest?: boolean; // Se true, é ação de teste administrador e não aparece nos relatórios
+
+  @IsBoolean()
+  @IsOptional()
+  isGroup?: boolean; // Se true, é mensagem de grupo
+
+  @IsString()
+  @IsOptional()
+  groupId?: string; // ID do grupo (remoteJid do grupo)
+
+  @IsString()
+  @IsOptional()
+  groupName?: string; // Nome do grupo
+
+  @IsString()
+  @IsOptional()
+  participantName?: string; // Nome do participante que enviou a mensagem (para grupos)
 }

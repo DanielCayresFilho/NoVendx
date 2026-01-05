@@ -43,16 +43,35 @@ export class WebhooksService {
           return { status: 'ignored', reason: 'Message from self' };
         }
 
-        // Ignorar mensagens de grupos (remoteJid termina com @g.us)
-        if (message.key.remoteJid?.includes('@g.us')) {
-          console.log('🚫 Mensagem de grupo ignorada:', message.key.remoteJid);
-          return { status: 'ignored', reason: 'Group message' };
+        // Verificar se é mensagem de grupo
+        const isGroup = message.key.remoteJid?.includes('@g.us') || false;
+        const groupId = isGroup ? message.key.remoteJid : null;
+        
+        // Para grupos, extrair informações do grupo e do participante
+        let from: string;
+        let groupName: string | null = null;
+        let participantName: string | null = null;
+        
+        if (isGroup) {
+          // Em grupos, o remoteJid é o ID do grupo
+          from = groupId || '';
+          // Tentar extrair nome do grupo (pode vir em message.messageContextInfo)
+          groupName = message.message?.messageContextInfo?.quotedMessage?.groupMention?.subject 
+            || message.pushName 
+            || `Grupo ${from}`;
+          // O participante que enviou está em message.participant ou message.key.participant
+          const participant = message.participant || message.key.participant;
+          if (participant) {
+            participantName = message.pushName || participant.replace('@s.whatsapp.net', '').replace('@c.us', '');
+          }
+          console.log(`👥 Mensagem de grupo detectada: ${groupName} (${groupId}), participante: ${participantName}`);
+        } else {
+          // Extrair número do remetente (remoteJid quando fromMe=false é o remetente)
+          from = message.key.remoteJid
+            ?.replace('@s.whatsapp.net', '')
+            ?.replace('@lid', '')
+            ?.replace('@c.us', '') || '';
         }
-
-        // Extrair número do remetente (remoteJid quando fromMe=false é o remetente)
-        const from = message.key.remoteJid
-          ?.replace('@s.whatsapp.net', '')
-          ?.replace('@lid', '');
 
         if (!from) {
           console.warn('⚠️ Webhook sem remoteJid; ignorando.', { key: message.key });
@@ -165,60 +184,90 @@ export class WebhooksService {
           }
         }
 
-        // Buscar contato
+        // Para grupos, usar groupId como identificador; para contatos individuais, usar o número
+        const contactIdentifier = isGroup ? (groupId || from) : from;
+        
+        // Buscar contato (para grupos, criar/atualizar com groupId)
         let contact = await this.prisma.contact.findFirst({
-          where: { phone: from },
+          where: { phone: contactIdentifier },
         });
 
         if (!contact) {
           // Criar contato se não existir
           contact = await this.prisma.contact.create({
             data: {
-              name: message.pushName || from,
-              phone: from,
+              name: isGroup ? (groupName || `Grupo ${contactIdentifier}`) : (message.pushName || from),
+              phone: contactIdentifier,
               segment: line.segment,
             },
           });
         }
 
-        // Registrar resposta do cliente (reseta repescagem)
-        await this.controlPanelService.registerClientResponse(from);
-
-        // Verificar frases de bloqueio automático
-        const isBlockPhrase = await this.controlPanelService.checkBlockPhrases(messageText, line.segment);
-        
-        let blockedByPhrase = false;
-        if (isBlockPhrase) {
-          console.log('🚫 Frase de bloqueio detectada:', messageText);
-          blockedByPhrase = true;
-          
-          // Adicionar à blocklist
-          await this.blocklistService.create({
-            name: contact.name,
-            phone: from,
-            cpf: contact.cpf,
-          });
-
-          console.log('✅ Contato adicionado à blocklist:', from);
+        // Registrar resposta do cliente (reseta repescagem) - apenas para contatos individuais
+        if (!isGroup) {
+          await this.controlPanelService.registerClientResponse(from);
         }
 
-        // Distribuir mensagem entre os operadores da linha (máximo 2)
-        const assignedOperatorId = await this.linesService.assignInboundMessageToOperator(line.id, from);
-        console.log(`📋 [Webhook] Mensagem de ${from} atribuída ao operador ${assignedOperatorId || 'nenhum (sem operadores online)'}`);
+        // Verificar frases de bloqueio automático - apenas para contatos individuais
+        let blockedByPhrase = false;
+        if (!isGroup) {
+          const isBlockPhrase = await this.controlPanelService.checkBlockPhrases(messageText, line.segment);
+          
+          if (isBlockPhrase) {
+            console.log('🚫 Frase de bloqueio detectada:', messageText);
+            blockedByPhrase = true;
+            
+            // Adicionar à blocklist
+            await this.blocklistService.create({
+              name: contact.name,
+              phone: from,
+              cpf: contact.cpf,
+            });
 
-        // Se não encontrou operador, tentar encontrar qualquer operador online da linha (mesmo que não tenha conversa ativa)
-        let finalOperatorId = assignedOperatorId;
-        if (!finalOperatorId && line.operators && line.operators.length > 0) {
-          // Buscar qualquer operador online da linha
-          const anyOnlineOperator = line.operators.find(lo => 
-            lo.user.status === 'Online' && lo.user.role === 'operator'
+            console.log('✅ Contato adicionado à blocklist:', from);
+          }
+        }
+
+        // Verificar modo compartilhado
+        const controlPanel = await this.controlPanelService.findOne();
+        const sharedLineMode = controlPanel?.sharedLineMode ?? false;
+
+        // Distribuir mensagem entre os operadores da linha
+        // No modo compartilhado, atribuir para todos os usuários da linha
+        let finalOperatorId: number | null = null;
+        
+        if (sharedLineMode && isGroup) {
+          // No modo compartilhado com grupos, atribuir para o primeiro operador/admin online da linha
+          // Mas a mensagem será enviada para todos via WebSocket
+          const anyOnlineUser = line.operators.find(lo => 
+            lo.user.status === 'Online' && 
+            (lo.user.role === 'operator' || lo.user.role === 'admin' || lo.user.role === 'supervisor')
           );
           
-          if (anyOnlineOperator) {
-            finalOperatorId = anyOnlineOperator.userId;
-            console.log(`✅ [Webhook] Atribuindo mensagem a operador online disponível: ${anyOnlineOperator.user.name} (ID: ${finalOperatorId})`);
+          if (anyOnlineUser) {
+            finalOperatorId = anyOnlineUser.userId;
+            console.log(`✅ [Webhook] Modo compartilhado: atribuindo grupo para ${anyOnlineUser.user.name} (ID: ${finalOperatorId})`);
+          }
+        } else if (!isGroup) {
+          // Para contatos individuais, usar a lógica normal
+          const assignedOperatorId = await this.linesService.assignInboundMessageToOperator(line.id, from);
+          console.log(`📋 [Webhook] Mensagem de ${from} atribuída ao operador ${assignedOperatorId || 'nenhum (sem operadores online)'}`);
+          finalOperatorId = assignedOperatorId;
+        }
+
+        // Se não encontrou operador, tentar encontrar qualquer operador/admin online da linha
+        if (!finalOperatorId && line.operators && line.operators.length > 0) {
+          // Buscar qualquer usuário online da linha (operador, admin ou supervisor)
+          const anyOnlineUser = line.operators.find(lo => 
+            lo.user.status === 'Online' && 
+            (lo.user.role === 'operator' || lo.user.role === 'admin' || lo.user.role === 'supervisor')
+          );
+          
+          if (anyOnlineUser) {
+            finalOperatorId = anyOnlineUser.userId;
+            console.log(`✅ [Webhook] Atribuindo mensagem a usuário online disponível: ${anyOnlineUser.user.name} (ID: ${finalOperatorId})`);
           } else {
-            console.warn(`⚠️ [Webhook] Nenhum operador online encontrado na linha ${line.id} mesmo após verificação de fallback`);
+            console.warn(`⚠️ [Webhook] Nenhum usuário online encontrado na linha ${line.id} mesmo após verificação de fallback`);
           }
         }
 
@@ -259,7 +308,7 @@ export class WebhooksService {
 
         // Criar conversa
         const conversation = await this.conversationsService.create({
-          contactName: contact.name,
+          contactName: isGroup ? (participantName || contact.name) : contact.name,
           contactPhone: from,
           segment: line.segment,
           userName: finalOperatorId ? line.operators.find(lo => lo.userId === finalOperatorId)?.user.name || null : null,
@@ -269,6 +318,10 @@ export class WebhooksService {
           sender: 'contact',
           messageType,
           mediaUrl,
+          isGroup,
+          groupId: groupId || undefined,
+          groupName: isGroup ? groupName : undefined,
+          participantName: isGroup ? participantName : undefined,
         });
 
         // Criar/atualizar vínculo de 24 horas entre conversa e operador (garantia adicional)

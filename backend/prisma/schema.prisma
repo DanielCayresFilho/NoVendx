@@ -226,6 +226,10 @@ model Conversation {
   archived     Boolean   @default(false) // Se true, conversa foi arquivada
   archivedAt   DateTime? // Data de arquivamento
   isAdminTest  Boolean   @default(false) // Se true, é ação de teste administrador e não aparece nos relatórios
+  isGroup      Boolean   @default(false) // Se true, é mensagem de grupo
+  groupId      String? // ID do grupo (remoteJid do grupo, ex: 120363123456789012@g.us)
+  groupName    String? // Nome do grupo
+  participantName String? // Nome do participante que enviou a mensagem (para grupos)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -237,6 +241,8 @@ model Conversation {
   @@index([datetime])
   @@index([archived, datetime])
   @@index([archivedAt])
+  @@index([isGroup])
+  @@index([groupId])
 }
 
 // Vínculo entre conversa (contactPhone + lineId) e operador por 24 horas

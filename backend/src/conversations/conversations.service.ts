@@ -74,12 +74,14 @@ export class ConversationsService {
       where.userLine = userLine;
     }
 
-    // Retornar TODAS as mensagens não tabuladas (o frontend vai agrupar)
+    // Retornar TODAS as mensagens não tabuladas (SEM LIMITE - histórico completo)
+    // O frontend vai agrupar por contactPhone/groupId
     const conversations = await this.prisma.conversation.findMany({
       where,
       orderBy: {
         datetime: 'asc', // Ordem cronológica para histórico
       },
+      // SEM take/limit - carregar todo o histórico
     });
 
     return conversations;
