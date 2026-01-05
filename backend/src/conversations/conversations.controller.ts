@@ -1,28 +1,49 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { ConversationsService } from './conversations.service';
-import { CreateConversationDto } from './dto/create-conversation.dto';
-import { UpdateConversationDto } from './dto/update-conversation.dto';
-import { TabulateConversationDto } from './dto/tabulate-conversation.dto';
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../common/guards/roles.guard';
-import { Roles } from '../common/decorators/roles.decorator';
-import { Role } from '@prisma/client';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { PrismaService } from '../prisma.service';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Query,
+  Res,
+} from "@nestjs/common";
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+} from "@nestjs/swagger";
+import { ConversationsService } from "./conversations.service";
+import { CreateConversationDto } from "./dto/create-conversation.dto";
+import { UpdateConversationDto } from "./dto/update-conversation.dto";
+import { TabulateConversationDto } from "./dto/tabulate-conversation.dto";
+import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
+import { RolesGuard } from "../common/guards/roles.guard";
+import { Roles } from "../common/decorators/roles.decorator";
+import { Role } from "@prisma/client";
+import { CurrentUser } from "../common/decorators/current-user.decorator";
+import { PrismaService } from "../prisma.service";
+import { Response } from "express";
+import * as PDFDocument from "pdfkit";
 
-@Controller('conversations')
+@Controller("conversations")
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ConversationsController {
   constructor(
     private readonly conversationsService: ConversationsService,
-    private readonly prisma: PrismaService,
+    private readonly prisma: PrismaService
   ) {}
 
   @Post()
   @Roles(Role.admin, Role.supervisor, Role.operator)
   create(@Body() createConversationDto: CreateConversationDto) {
-    console.log('📝 [POST /conversations] Criando conversa:', JSON.stringify(createConversationDto, null, 2));
+    console.log(
+      "📝 [POST /conversations] Criando conversa:",
+      JSON.stringify(createConversationDto, null, 2)
+    );
     return this.conversationsService.create(createConversationDto);
   }
 
@@ -45,10 +66,12 @@ export class ConversationsController {
     return this.conversationsService.findAll(where);
   }
 
-  @Get('active')
+  @Get("active")
   @Roles(Role.admin, Role.supervisor, Role.operator, Role.digital)
   async getActiveConversations(@CurrentUser() user: any) {
-    console.log(`📋 [GET /conversations/active] Usuário: ${user.name} (${user.role}), line: ${user.line}, segment: ${user.segment}`);
+    console.log(
+      `📋 [GET /conversations/active] Usuário: ${user.name} (${user.role}), line: ${user.line}, segment: ${user.segment}`
+    );
 
     // Admin e digital veem TODAS as conversas ativas (sem filtro)
     if (user.role === Role.admin || user.role === Role.digital) {
@@ -56,7 +79,10 @@ export class ConversationsController {
     }
     // Supervisor vê apenas conversas ativas do seu segmento
     if (user.role === Role.supervisor) {
-      return this.conversationsService.findAll({ segment: user.segment, tabulation: null });
+      return this.conversationsService.findAll({
+        segment: user.segment,
+        tabulation: null,
+      });
     }
     // Operador: buscar linha atual (pode estar em LineOperator ou no campo legacy)
     let currentLineId = user.line;
@@ -70,8 +96,13 @@ export class ConversationsController {
 
     // Se não tem linha, retornar apenas conversas do próprio operador
     if (!currentLineId) {
-      console.log(`📋 [GET /conversations/active] Operador ${user.name} não tem linha - retornando apenas suas conversas`);
-      return this.conversationsService.findActiveConversations(undefined, user.id);
+      console.log(
+        `📋 [GET /conversations/active] Operador ${user.name} não tem linha - retornando apenas suas conversas`
+      );
+      return this.conversationsService.findActiveConversations(
+        undefined,
+        user.id
+      );
     }
 
     // MODO COMPARTILHADO: Buscar todos os operadores da mesma linha
@@ -80,17 +111,21 @@ export class ConversationsController {
       select: { userId: true },
     });
 
-    const userIds = lineOperators.map(lo => lo.userId);
-    console.log(`📋 [GET /conversations/active] Operador ${user.name} está na linha ${currentLineId} com ${userIds.length} operador(es) - retornando conversas de todos`);
+    const userIds = lineOperators.map((lo) => lo.userId);
+    console.log(
+      `📋 [GET /conversations/active] Operador ${user.name} está na linha ${currentLineId} com ${userIds.length} operador(es) - retornando conversas de todos`
+    );
 
     // Retornar conversas de TODOS os operadores da linha compartilhada
     return this.conversationsService.findActiveConversationsByUserIds(userIds);
   }
 
-  @Get('tabulated')
+  @Get("tabulated")
   @Roles(Role.admin, Role.supervisor, Role.operator, Role.digital)
   async getTabulatedConversations(@CurrentUser() user: any) {
-    console.log(`📋 [GET /conversations/tabulated] Usuário: ${user.name} (${user.role}), line: ${user.line}, segment: ${user.segment}`);
+    console.log(
+      `📋 [GET /conversations/tabulated] Usuário: ${user.name} (${user.role}), line: ${user.line}, segment: ${user.segment}`
+    );
 
     // Admin e digital veem TODAS as conversas tabuladas (sem filtro)
     if (user.role === Role.admin || user.role === Role.digital) {
@@ -98,7 +133,10 @@ export class ConversationsController {
     }
     // Supervisor vê apenas conversas tabuladas do seu segmento
     if (user.role === Role.supervisor) {
-      return this.conversationsService.findAll({ segment: user.segment, tabulation: { not: null } });
+      return this.conversationsService.findAll({
+        segment: user.segment,
+        tabulation: { not: null },
+      });
     }
     // Operador: buscar linha atual (pode estar em LineOperator ou no campo legacy)
     let currentLineId = user.line;
@@ -112,8 +150,13 @@ export class ConversationsController {
 
     // Se não tem linha, retornar apenas conversas do próprio operador
     if (!currentLineId) {
-      console.log(`📋 [GET /conversations/tabulated] Operador ${user.name} não tem linha - retornando apenas suas conversas`);
-      return this.conversationsService.findTabulatedConversations(undefined, user.id);
+      console.log(
+        `📋 [GET /conversations/tabulated] Operador ${user.name} não tem linha - retornando apenas suas conversas`
+      );
+      return this.conversationsService.findTabulatedConversations(
+        undefined,
+        user.id
+      );
     }
 
     // MODO COMPARTILHADO: Buscar todos os operadores da mesma linha
@@ -122,76 +165,89 @@ export class ConversationsController {
       select: { userId: true },
     });
 
-    const userIds = lineOperators.map(lo => lo.userId);
-    console.log(`📋 [GET /conversations/tabulated] Operador ${user.name} está na linha ${currentLineId} com ${userIds.length} operador(es) - retornando conversas de todos`);
+    const userIds = lineOperators.map((lo) => lo.userId);
+    console.log(
+      `📋 [GET /conversations/tabulated] Operador ${user.name} está na linha ${currentLineId} com ${userIds.length} operador(es) - retornando conversas de todos`
+    );
 
     // Retornar conversas de TODOS os operadores da linha compartilhada
-    return this.conversationsService.findTabulatedConversationsByUserIds(userIds);
-  }
-
-  @Get('segment/:segment')
-  @Roles(Role.supervisor, Role.admin, Role.digital)
-  getBySegment(
-    @Param('segment') segment: string,
-    @Query('tabulated') tabulated?: string,
-  ) {
-    return this.conversationsService.getConversationsBySegment(
-      +segment,
-      tabulated === 'true',
+    return this.conversationsService.findTabulatedConversationsByUserIds(
+      userIds
     );
   }
 
-  @Get('contact/:phone')
+  @Get("segment/:segment")
+  @Roles(Role.supervisor, Role.admin, Role.digital)
+  getBySegment(
+    @Param("segment") segment: string,
+    @Query("tabulated") tabulated?: string
+  ) {
+    return this.conversationsService.getConversationsBySegment(
+      +segment,
+      tabulated === "true"
+    );
+  }
+
+  @Get("contact/:phone")
   @Roles(Role.admin, Role.supervisor, Role.operator, Role.digital)
   getByContactPhone(
-    @Param('phone') phone: string,
-    @Query('tabulated') tabulated?: string,
-    @CurrentUser() user?: any,
+    @Param("phone") phone: string,
+    @Query("tabulated") tabulated?: string,
+    @CurrentUser() user?: any
   ) {
     // Admin e Supervisor podem ver qualquer contato
     // Operador só pode ver contatos que tem conversas com ele (por userId, não por linha)
     // IMPORTANTE: Não filtrar por userLine para que conversas de linhas banidas continuem aparecendo
     if (user?.role === Role.operator) {
-      return this.conversationsService.findByContactPhone(phone, tabulated === 'true', user.id);
+      return this.conversationsService.findByContactPhone(
+        phone,
+        tabulated === "true",
+        user.id
+      );
     }
     return this.conversationsService.findByContactPhone(
       phone,
-      tabulated === 'true',
+      tabulated === "true"
     );
   }
 
-  @Get(':id')
+  @Get(":id")
   @Roles(Role.admin, Role.supervisor, Role.operator, Role.digital)
-  findOne(@Param('id') id: string) {
+  findOne(@Param("id") id: string) {
     return this.conversationsService.findOne(+id);
   }
 
-  @Patch(':id')
+  @Patch(":id")
   @Roles(Role.admin, Role.supervisor, Role.operator, Role.digital)
-  update(@Param('id') id: string, @Body() updateConversationDto: UpdateConversationDto) {
+  update(
+    @Param("id") id: string,
+    @Body() updateConversationDto: UpdateConversationDto
+  ) {
     return this.conversationsService.update(+id, updateConversationDto);
   }
 
-  @Post('tabulate/:phone')
+  @Post("tabulate/:phone")
   @Roles(Role.operator)
   tabulate(
-    @Param('phone') phone: string,
-    @Body() tabulateDto: TabulateConversationDto,
+    @Param("phone") phone: string,
+    @Body() tabulateDto: TabulateConversationDto
   ) {
-    return this.conversationsService.tabulateConversation(phone, tabulateDto.tabulationId);
+    return this.conversationsService.tabulateConversation(
+      phone,
+      tabulateDto.tabulationId
+    );
   }
 
-  @Post('recall/:phone')
+  @Post("recall/:phone")
   @Roles(Role.operator)
-  async recallContact(
-    @Param('phone') phone: string,
-    @CurrentUser() user: any,
-  ) {
-    console.log(`📞 [POST /conversations/recall/:phone] Operador ${user.name} rechamando contato ${phone}`);
-    
+  async recallContact(@Param("phone") phone: string, @CurrentUser() user: any) {
+    console.log(
+      `📞 [POST /conversations/recall/:phone] Operador ${user.name} rechamando contato ${phone}`
+    );
+
     // Buscar linha atual do operador (pode estar na tabela LineOperator ou no campo legacy)
     let userLine = user.line;
-    
+
     // Se não tiver no campo legacy, buscar na tabela LineOperator
     if (!userLine) {
       const lineOperator = await this.prisma.lineOperator.findFirst({
@@ -200,13 +256,107 @@ export class ConversationsController {
       });
       userLine = lineOperator?.lineId || null;
     }
-    
+
     return this.conversationsService.recallContact(phone, user.id, userLine);
   }
 
-  @Delete(':id')
+  @Delete(":id")
   @Roles(Role.admin, Role.supervisor)
-  remove(@Param('id') id: string) {
+  remove(@Param("id") id: string) {
     return this.conversationsService.remove(+id);
+  }
+
+  @Get("download-pdf/:phone")
+  @Roles(Role.admin, Role.digital)
+  async downloadConversationPdf(
+    @Param("phone") phone: string,
+    @Res() res: Response,
+    @CurrentUser() user: any
+  ) {
+    try {
+      // Buscar conversa completa
+      const conversation = await this.conversationsService.findByContactPhone(
+        phone,
+        false
+      );
+
+      if (!conversation || conversation.length === 0) {
+        return res.status(404).json({ message: "Conversa não encontrada" });
+      }
+
+      // Buscar informações do contato
+      const contact = await this.prisma.contact.findUnique({
+        where: { phone },
+      });
+
+      // Criar PDF
+      const doc = new PDFDocument({
+        size: "A4",
+        margin: 50,
+      });
+
+      // Configurar headers para download
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=conversa-${phone}-${
+          new Date().toISOString().split("T")[0]
+        }.pdf`
+      );
+
+      // Pipe do PDF para a resposta
+      doc.pipe(res);
+
+      // Título
+      doc.fontSize(20).text("Conversa", { align: "center" });
+      doc.moveDown();
+
+      // Informações do contato
+      doc.fontSize(12);
+      doc.text(`Telefone: ${phone}`);
+      if (contact) {
+        doc.text(`Nome: ${contact.name || "Não informado"}`);
+        doc.text(`CPF: ${contact.cpf || "Não informado"}`);
+      }
+      doc.text(`Data: ${new Date().toLocaleDateString("pt-BR")}`);
+      doc.moveDown();
+
+      // Linha separadora
+      doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
+      doc.moveDown();
+
+      // Mensagens
+      conversation.forEach((msg, index) => {
+        const timestamp = new Date(msg.datetime).toLocaleString("pt-BR");
+        const sender = msg.sender === "operator" ? "Operador" : "Cliente";
+        const message = msg.message || "(mídia)";
+
+        // Cabeçalho da mensagem
+        doc
+          .fontSize(10)
+          .fillColor("gray")
+          .text(`[${timestamp}] ${sender}:`, { continued: false });
+        doc.fillColor("black");
+
+        // Conteúdo da mensagem
+        doc.fontSize(11).text(message, {
+          width: 450,
+          align: "left",
+        });
+
+        doc.moveDown(0.5);
+
+        // Quebrar página se necessário
+        if (doc.y > 700) {
+          doc.addPage();
+        }
+      });
+
+      // Finalizar PDF
+      doc.end();
+    } catch (error) {
+      console.error("Erro ao gerar PDF:", error);
+      res.status(500).json({ message: "Erro ao gerar PDF da conversa" });
+    }
   }
 }

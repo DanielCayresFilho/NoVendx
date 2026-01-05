@@ -1618,36 +1618,31 @@ export default function Atendimento() {
                               onClick={async () => {
                                 if (!selectedConversation) return;
                                 try {
-                                  const messages =
-                                    selectedConversation.messages || [];
-                                  const conversationText = messages
-                                    .map((msg) => {
-                                      const date = format(
-                                        new Date(msg.datetime),
-                                        "dd/MM/yyyy HH:mm:ss"
-                                      );
-                                      const sender =
-                                        msg.sender === "operator"
-                                          ? "Operador"
-                                          : "Cliente";
-                                      return `[${date}] ${sender}: ${
-                                        msg.message || "(mídia)"
-                                      }`;
-                                    })
-                                    .join("\n\n");
+                                  // Fazer download do PDF via API
+                                  const response = await fetch(
+                                    `${API_BASE_URL}/conversations/download-pdf/${selectedConversation.contactPhone}`,
+                                    {
+                                      method: "GET",
+                                      headers: {
+                                        Authorization: `Bearer ${localStorage.getItem(
+                                          "token"
+                                        )}`,
+                                      },
+                                    }
+                                  );
 
-                                  const fullText = `Conversa com ${selectedConversation.contactName} (${selectedConversation.contactPhone})\n\n${conversationText}`;
+                                  if (!response.ok) {
+                                    throw new Error("Erro ao baixar PDF");
+                                  }
 
-                                  // Criar blob e download
-                                  const blob = new Blob([fullText], {
-                                    type: "text/plain",
-                                  });
+                                  // Criar blob do PDF e download
+                                  const blob = await response.blob();
                                   const url = URL.createObjectURL(blob);
                                   const a = document.createElement("a");
                                   a.href = url;
                                   a.download = `conversa-${
                                     selectedConversation.contactPhone
-                                  }-${format(new Date(), "yyyy-MM-dd")}.txt`;
+                                  }-${format(new Date(), "yyyy-MM-dd")}.pdf`;
                                   document.body.appendChild(a);
                                   a.click();
                                   document.body.removeChild(a);
