@@ -1063,9 +1063,15 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
               EventSeverity.INFO,
             );
 
-            // Emitir mensagem para o usuário
+            // Emitir mensagem para o usuário que enviou
             if (conversation) {
               client.emit('message-sent', { message: conversation });
+
+              // SINCRONIZAÇÃO: Emitir para outros operadores da mesma linha
+              if (currentLineId) {
+                await this.emitToLineOperators(currentLineId, 'new_message', { message: conversation }, user.id);
+              }
+
               this.emitToSupervisors(user.segment, 'new_message', { message: conversation });
             }
 
@@ -1620,9 +1626,15 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         EventSeverity.INFO,
       );
       
-      // Emitir mensagem para o usuário (usar mesmo formato que new_message)
+      // Emitir mensagem para o usuário que enviou
       console.log(`✅ [WebSocket] Emitindo message-sent para ${user.name} - ContactPhone: ${data.contactPhone}, IsGroup: ${isGroup}`);
       client.emit('message-sent', { message: conversation });
+
+      // SINCRONIZAÇÃO: Emitir para TODOS os outros operadores da mesma linha (modo compartilhado)
+      // Isso garante que quando X envia mensagem, Y também vê em tempo real
+      if (currentLineId) {
+        await this.emitToLineOperators(currentLineId, 'new_message', { message: conversation }, user.id);
+      }
 
       // Se houver supervisores online do mesmo segmento, enviar para eles também
       this.emitToSupervisors(user.segment, 'new_message', { message: conversation });
@@ -1882,10 +1894,16 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
           );
         }
         
-        // Emitir mensagem para o usuário
+        // Emitir mensagem para o usuário que enviou
         client.emit('message-sent', { message: conversation });
+
+        // SINCRONIZAÇÃO: Emitir para outros operadores da mesma linha
+        if (newLine?.id) {
+          await this.emitToLineOperators(newLine.id, 'new_message', { message: conversation }, user.id);
+        }
+
         this.emitToSupervisors(user.segment, 'new_message', { message: conversation });
-        
+
         return { success: true, conversation };
         
       } catch (retryError: any) {
@@ -2279,6 +2297,39 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       if (client) {
         client.emit(event, data);
       }
+    }
+  }
+
+  /**
+   * Emite evento para TODOS os operadores da mesma linha (modo compartilhado)
+   * Usado para sincronizar mensagens enviadas entre operadores que compartilham a mesma linha
+   */
+  private async emitToLineOperators(lineId: number, event: string, data: any, excludeUserId?: number) {
+    try {
+      // Buscar todos os operadores vinculados à linha
+      const lineOperators = await (this.prisma as any).lineOperator.findMany({
+        where: { lineId },
+        include: { user: true },
+      });
+
+      console.log(`📢 [WebSocket] Emitindo '${event}' para ${lineOperators.length} operador(es) da linha ${lineId}`);
+
+      // Emitir para cada operador online (exceto quem enviou, se especificado)
+      for (const lo of lineOperators) {
+        if (excludeUserId && lo.userId === excludeUserId) {
+          continue; // Pular o operador que enviou (já recebeu message-sent)
+        }
+
+        if (lo.user.status === 'Online') {
+          const socketId = this.connectedUsers.get(lo.userId);
+          if (socketId) {
+            console.log(`  → Emitindo para ${lo.user.name} (userId: ${lo.userId})`);
+            this.server.to(socketId).emit(event, data);
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error(`❌ [WebSocket] Erro ao emitir para operadores da linha ${lineId}:`, error.message);
     }
   }
 

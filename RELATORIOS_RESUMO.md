@@ -35,15 +35,15 @@ Este documento contém um resumo detalhado de todos os relatórios disponíveis 
 ### Colunas
 1. **Segmento** - Nome do segmento
 2. **Data** - Data da conversa (YYYY-MM-DD)
-3. **Hora** - Sempre `null` (agregado por dia)
+3. **Hora** - Sempre  (agregado por dia)
 4. **Qtd. Total Mensagens** - Total de mensagens no período
 5. **Qtd. Total Entrantes** - Mensagens recebidas do contato (`sender = 'contact'`)
 6. **Qtd. Promessas** - Mensagens com tabulação CPC (`tabulation.isCPC = true`)
 7. **Conversão** - Percentual: (Promessas / Total Mensagens) * 100
-8. **Tempo Médio Transbordo** - Sempre `null`
-9. **Tempo Médio Espera Total** - Sempre `null`
-10. **Tempo Médio Atendimento** - Sempre `null`
-11. **Tempo Médio Resposta** - Sempre `null`
+8. **Tempo Médio Transbordo** - Sempre 
+9. **Tempo Médio Espera Total** - Sempre 
+10. **Tempo Médio Atendimento** - Sempre 
+11. **Tempo Médio Resposta** - Sempre 
 
 ### Regras e Validações
 - **Fonte de dados**: Tabela `Conversation`
@@ -54,7 +54,7 @@ Este documento contém um resumo detalhado de todos os relatórios disponíveis 
   - Filtro de segmento (se fornecido)
   - Filtro de data (se fornecido)
 - **Ordenação**: Por data (ascendente)
-- **Campos null**: Tempos médios sempre retornam `null` (não implementados)
+- **Campos null**: Tempos médios sempre retornam  (não implementados)
 
 ---
 
@@ -70,19 +70,19 @@ Este documento contém um resumo detalhado de todos os relatórios disponíveis 
 5. **Contato** - Nome do contato (`contactName`)
 6. **Identificação** - CPF do contato (da tabela `Contact`)
 7. **Código Contato** - ID do contato
-8. **Hashtag** - Sempre `null`
+8. **Hashtag** - Sempre 
 9. **Usuário** - Nome do operador (`userName`)
-10. **Número Protocolo** - Sempre `null`
-11. **Data Hora Geração Protocolo** - Sempre `null`
+10. **Número Protocolo** - Sempre 
+11. **Data Hora Geração Protocolo** - Sempre 
 12. **Observação** - Mensagem da conversa
-13. **SMS Principal** - Sempre `null`
+13. **SMS Principal** - Sempre 
 14. **Whatsapp Principal** - Telefone do contato
-15. **Email Principal** - Sempre `null`
+15. **Email Principal** - Sempre 
 16. **Canal** - Sempre "WhatsApp"
 17. **Carteiras** - Nome do segmento
 18. **Carteira do Evento** - Nome do segmento
-19. **Valor da oportunidade** - Sempre `null`
-20. **Identificador da chamada de Voz** - Sempre `null`
+19. **Valor da oportunidade** - Sempre 
+20. **Identificador da chamada de Voz** - Sempre 
 
 ### Regras e Validações
 - **Fonte de dados**: Tabela `Conversation` (apenas conversas tabuladas: `tabulation IS NOT NULL`)
@@ -93,7 +93,7 @@ Este documento contém um resumo detalhado de todos os relatórios disponíveis 
   - Filtro de segmento (se fornecido)
   - Filtro de data (se fornecido)
 - **Ordenação**: Por data (descendente - mais recentes primeiro)
-- **Campos null**: Muitos campos retornam `null` (não implementados no sistema)
+- **Campos null**: Muitos campos retornam  (não implementados no sistema)
 
 ---
 
@@ -105,17 +105,17 @@ Este documento contém um resumo detalhado de todos os relatórios disponíveis 
 1. **Contato** - Nome do contato da campanha
 2. **Identificador** - CPF do contato (da tabela `Contact`)
 3. **Código** - ID do contato
-4. **Hashtag** - Sempre `null`
+4. **Hashtag** - Sempre 
 5. **Template** - Nome da campanha (`campaign.name`)
 6. **WhatsApp do contato** - Telefone do contato
 7. **Solicitação envio** - Data de criação da campanha (YYYY-MM-DD)
 8. **Envio** - Data/hora do envio (`dateTime` - YYYY-MM-DD)
 9. **Confirmação** - "Sim" se `response = true`, "Não" caso contrário
-10. **Leitura (se habilitado)** - Sempre `null`
+10. **Leitura (se habilitado)** - Sempre 
 11. **Falha entrega** - "Sim" se `retryCount > 0`, "Não" caso contrário
-12. **Motivo falha** - Sempre `null`
+12. **Motivo falha** - Sempre 
 13. **WhatsApp de saida** - Telefone da linha (`lineReceptor.phone`)
-14. **Usuário Solicitante** - Sempre `null`
+14. **Usuário Solicitante** - Sempre 
 15. **Carteira** - Nome do segmento
 16. **Teve retorno** - "Sim" se `response = true`, "Não" caso contrário
 
@@ -127,7 +127,7 @@ Este documento contém um resumo detalhado de todos os relatórios disponíveis 
   - Filtro de segmento via `contactSegment` (se fornecido)
   - Filtro de data via `dateTime` (se fornecido)
 - **Ordenação**: Por data (descendente - mais recentes primeiro)
-- **Campos null**: Leitura, motivo falha, usuário solicitante sempre `null`
+- **Campos null**: Leitura, motivo falha, usuário solicitante sempre 
 
 ---
 
@@ -138,9 +138,9 @@ Este documento contém um resumo detalhado de todos os relatórios disponíveis 
 ### Colunas
 1. **Data** - Data da última atualização (`updatedAt` - YYYY-MM-DD)
 2. **Numero** - Telefone da linha
-3. **Business** - `businessID` da linha (pode ser `null`)
-4. **QualityScore** - Sempre `null`
-5. **Tier** - Sempre `null`
+3. **Business** - `businessID` da linha (pode ser )
+4. **QualityScore** - Sempre 
+5. **Tier** - Sempre 
 6. **Segmento** - Nome do segmento da linha
 
 ### Regras e Validações
@@ -149,7 +149,7 @@ Este documento contém um resumo detalhado de todos os relatórios disponíveis 
   - Filtro de identificador (cliente/proprietario)
   - Filtro de segmento (se fornecido)
 - **Ordenação**: Por `updatedAt` (descendente - mais recentes primeiro)
-- **Campos null**: QualityScore e Tier sempre `null` (não implementados)
+- **Campos null**: QualityScore e Tier sempre  (não implementados)
 
 ---
 
@@ -169,7 +169,7 @@ Este documento contém um resumo detalhado de todos os relatórios disponíveis 
 9. **telefone_cliente** - Telefone do contato
 10. **status_envio** - "Enviado" se `response = true`, "Falha" se `retryCount > 0`, senão "Pendente"
 11. **numero_saida** - Telefone da linha (`lineReceptor.phone`)
-12. **login_usuario** - Sempre `null`
+12. **login_usuario** - Sempre 
 13. **template_envio** - Nome da campanha
 14. **tipo_envio** - "Campanha" se tem `campaignId`, "1x1" caso contrário
 19. **cliente_respondeu** - "Sim" se `response = true`, "Não" caso contrário
@@ -184,7 +184,7 @@ Este documento contém um resumo detalhado de todos os relatórios disponíveis 
   - Filtro de segmento via `contactSegment` (se fornecido)
   - Filtro de data via `dateTime` (se fornecido)
 - **Ordenação**: Por data (descendente)
-- **Campos null**: login_usuario sempre `null`
+- **Campos null**: login_usuario sempre 
 
 ---
 
@@ -217,15 +217,15 @@ Este documento contém um resumo detalhado de todos os relatórios disponíveis 
 22. **cpc** - 1 se tabulação é CPC, 0 caso contrário
 23. **cpc_produtivo** - 1 se CPC e teve retorno, 0 caso contrário
 24. **boleto** - Sempre 0
-25. **valor** - Sempre `null`
+25. **valor** - Sempre 
 26. **transbordo** - Sempre 0
 27. **primeira_opcao_oferta** - Sempre 0
 28. **segunda_via** - Sempre 0
-29. **nota_nps** - Sempre `null`
-30. **obs_nps** - Sempre `null`
+29. **nota_nps** - Sempre 
+30. **obs_nps** - Sempre 
 31. **erro_api** - Sempre 0
 32. **abandono** - Sempre 0
-33. **protocolo** - Sempre `null`
+33. **protocolo** - Sempre 
 
 ### Regras e Validações
 - **Fonte de dados**: Tabela `Conversation` (com joins em `Campaign` e `Contact`)
@@ -258,12 +258,12 @@ Este documento contém um resumo detalhado de todos os relatórios disponíveis 
 11. **evento** - Nome da tabulação
 12. **evento_normalizado** - Nome da tabulação normalizado
 13. **tma** - Tempo médio de atendimento
-14. **tmc** - Sempre `null`
-15. **tmpro** - Sempre `null`
-16. **tmf** - Sempre `null`
-17. **tmrc** - Sempre `null`
-18. **tmro** - Sempre `null`
-19. **protocolo** - Sempre `null`
+14. **tmc** - Sempre 
+15. **tmpro** - Sempre 
+16. **tmf** - Sempre 
+17. **tmrc** - Sempre 
+18. **tmro** - Sempre 
+19. **protocolo** - Sempre 
 
 ### Regras e Validações
 - **Fonte de dados**: Tabela `Conversation` (apenas conversas tabuladas)
@@ -274,7 +274,7 @@ Este documento contém um resumo detalhado de todos os relatórios disponíveis 
   - Filtro de segmento (se fornecido)
   - Filtro de data (se fornecido)
 - **Ordenação**: Por data (descendente)
-- **Campos null**: Apenas TMA é calculado, outros tempos sempre `null`
+- **Campos null**: Apenas TMA é calculado, outros tempos sempre 
 
 ---
 
@@ -401,13 +401,13 @@ Este documento contém um resumo detalhado de todos os relatórios disponíveis 
 
 ### Colunas
 1. **Data de Conversa** - Data da mensagem (YYYY-MM-DD)
-2. **Protocolo** - Sempre `null`
+2. **Protocolo** - Sempre 
 3. **Login do Operador** - Nome do operador
 4. **CPF/CNPJ** - CPF do contato
 5. **Contrato** - Contrato do contato
 6. **Data e Hora início da Conversa** - Data/hora da primeira mensagem da conversa
 7. **Data e Hora fim da Conversa** - Data/hora da última mensagem da conversa
-8. **Paschoalotto** - Sempre `null`
+8. **Paschoalotto** - Sempre 
 9. **Telefone do Cliente** - Telefone do contato
 10. **Segmento** - Nome do segmento
 11. **Hora da Mensagem** - Hora da mensagem (HH:MM:SS)
@@ -493,7 +493,7 @@ Este documento contém um resumo detalhado de todos os relatórios disponíveis 
 10. **Finalização** - Nome da tabulação
 11. **Segmento** - Nome do segmento
 12. **Carteira** - Nome do segmento (mesmo que Segmento)
-13. **Protocolo** - Sempre `null`
+13. **Protocolo** - Sempre 
 
 ### Regras e Validações
 - **Fonte de dados**: Tabela `Conversation` (agrupado por telefone)
@@ -539,7 +539,7 @@ Este documento contém um resumo detalhado de todos os relatórios disponíveis 
 ### Colunas
 1. **Data de Disparo** - Data de criação do template message (YYYY-MM-DD)
 2. **Nome do Template** - Nome do template
-3. **Protocolo** - Sempre `null`
+3. **Protocolo** - Sempre 
 4. **Segmento** - Nome do segmento
 5. **Login do Operador** - Email do operador (se disponível)
 6. **Número de Saída** - Telefone da linha
@@ -607,7 +607,7 @@ Retorna um objeto JSON com todos os 17 relatórios acima executados em paralelo.
 
 ## OBSERVAÇÕES IMPORTANTES
 
-1. **Campos Null**: Muitos campos retornam `null` porque não estão implementados no sistema atual. Isso é intencional e conforme especificação do cliente.
+1. **Campos Null**: Muitos campos retornam  porque não estão implementados no sistema atual. Isso é intencional e conforme especificação do cliente.
 
 2. **Normalização de Texto**: Todos os textos são normalizados usando `normalizeObject()` que remove acentos e caracteres especiais.
 

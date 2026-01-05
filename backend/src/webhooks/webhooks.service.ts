@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
+import axios from 'axios';
 import { LinesService } from '../lines/lines.service';
 import { MediaService } from '../media/media.service';
 import { ControlPanelService } from '../control-panel/control-panel.service';
@@ -55,14 +56,16 @@ export class WebhooksService {
         if (isGroup) {
           // Em grupos, o remoteJid é o ID do grupo
           from = groupId || '';
+
           // Tentar extrair nome do grupo (pode vir em message.messageContextInfo)
-          groupName = message.message?.messageContextInfo?.quotedMessage?.groupMention?.subject 
-            || message.pushName 
-            || `Grupo ${from}`;
+          // IMPORTANTE: NÃO usar pushName como fallback (pushName é o nome de quem enviou, não do grupo)
+          groupName = message.message?.messageContextInfo?.quotedMessage?.groupMention?.subject
+            || 'Grupo sem nome'; // Nome padrão quando não encontra o nome do grupo
+
           // O participante que enviou está em message.participant ou message.key.participant
           const participant = message.participant || message.key.participant;
           if (participant) {
-            participantName = message.pushName || participant.replace('@s.whatsapp.net', '').replace('@c.us', '');
+            participantName = message.pushName || participant.replace('@s.whatsapp.net', '').replace('@c.us', '').replace('@lid', '');
           }
           console.log(`👥 Mensagem de grupo detectada: ${groupName} (${groupId}), participante: ${participantName}`);
         } else {
@@ -186,7 +189,27 @@ export class WebhooksService {
 
         // Para grupos, usar groupId como identificador; para contatos individuais, usar o número
         const contactIdentifier = isGroup ? (groupId || from) : from;
-        
+
+        // Para grupos sem nome, tentar buscar o nome real via Evolution API
+        if (isGroup && groupName === 'Grupo sem nome' && groupId) {
+          const evolution = await this.prisma.evolution.findUnique({
+            where: { evolutionName: line.evolutionName },
+          });
+
+          if (evolution) {
+            const realGroupName = await this.fetchGroupName(
+              groupId,
+              evolution.evolutionUrl,
+              evolution.evolutionKey,
+              instanceName
+            );
+
+            if (realGroupName) {
+              groupName = realGroupName;
+            }
+          }
+        }
+
         // Buscar contato (para grupos, criar/atualizar com groupId)
         let contact = await this.prisma.contact.findFirst({
           where: { phone: contactIdentifier },
@@ -196,11 +219,19 @@ export class WebhooksService {
           // Criar contato se não existir
           contact = await this.prisma.contact.create({
             data: {
-              name: isGroup ? (groupName || `Grupo ${contactIdentifier}`) : (message.pushName || from),
+              name: isGroup ? groupName : (message.pushName || from), // Para grupos, usar groupName (agora pode ser o nome real da Evolution API)
               phone: contactIdentifier,
               segment: line.segment,
             },
           });
+          console.log(`✅ [Webhook] Contato criado: ${contact.name} (${contactIdentifier}), IsGroup: ${isGroup}`);
+        } else if (isGroup && contact.name === 'Grupo sem nome' && groupName !== 'Grupo sem nome') {
+          // Se o contato existe com "Grupo sem nome" mas agora temos o nome real, atualizar
+          contact = await this.prisma.contact.update({
+            where: { id: contact.id },
+            data: { name: groupName },
+          });
+          console.log(`✅ [Webhook] Nome do grupo atualizado: ${groupName} (${contactIdentifier})`);
         }
 
         // Registrar resposta do cliente (reseta repescagem) - apenas para contatos individuais
@@ -522,6 +553,49 @@ export class WebhooksService {
     } catch (error) {
       console.error('Erro ao processar webhook:', error);
       return { status: 'error', error: error.message };
+    }
+  }
+
+  /**
+   * Busca o nome real do grupo via Evolution API
+   * @param groupId - ID do grupo (ex: 120363027798409612@g.us)
+   * @param evolutionUrl - URL da Evolution API
+   * @param evolutionKey - Chave de autenticação
+   * @param instanceName - Nome da instância
+   * @returns Nome do grupo ou null se não encontrar
+   */
+  private async fetchGroupName(
+    groupId: string,
+    evolutionUrl: string,
+    evolutionKey: string,
+    instanceName: string
+  ): Promise<string | null> {
+    try {
+      console.log(`🔍 [Webhook] Buscando nome do grupo ${groupId} via Evolution API...`);
+
+      const response = await axios.get(
+        `${evolutionUrl}/group/fetchAllGroups/${instanceName}`,
+        {
+          headers: { apikey: evolutionKey },
+          timeout: 5000, // 5 segundos de timeout
+        }
+      );
+
+      if (response.data && Array.isArray(response.data)) {
+        // Procurar o grupo específico no array retornado
+        const group = response.data.find((g: any) => g.id === groupId);
+
+        if (group && group.subject) {
+          console.log(`✅ [Webhook] Nome do grupo encontrado: ${group.subject}`);
+          return group.subject;
+        }
+      }
+
+      console.warn(`⚠️ [Webhook] Grupo ${groupId} não encontrado na resposta da Evolution API`);
+      return null;
+    } catch (error: any) {
+      console.error(`❌ [Webhook] Erro ao buscar nome do grupo:`, error.message);
+      return null;
     }
   }
 

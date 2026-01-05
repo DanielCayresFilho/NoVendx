@@ -17,7 +17,8 @@
       "Bash(npx tsc:*)",
       "Bash(tail:*)",
       "Bash(cat:*)",
-      "Bash(psql:*)"
+      "Bash(psql:*)",
+      "WebFetch(domain:doc.evolution-api.com)"
     ]
   }
 }

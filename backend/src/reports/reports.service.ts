@@ -690,11 +690,11 @@ export class ReportsService {
 
       return {
         Data: this.formatDate(line.updatedAt),
-        Numero: line.phone,
-        Business: line.businessID || null,
-        QualityScore: null,
-        Tier: null,
-        Segmento: segment?.name || null,
+        Número: line.phone,
+        'ID Negócio': line.businessID || 'N/A',
+        'Pontuação de Qualidade': 'N/A', // Não temos esse dado ainda
+        Nível: 'N/A', // Não temos esse dado ainda
+        Segmento: segment?.name || 'Sem segmento',
       };
     });
 
@@ -2049,18 +2049,16 @@ export class ReportsService {
       const teveRetorno = convs.some(c => c.sender === 'contact');
 
       result.push({
-        'Data Início Conversa': this.formatDate(firstConv.createdAt),
-        'Data de Início da Conversa': this.formatDate(firstConv.datetime),
+        'Data/Hora Início': this.formatDateTime(firstConv.datetime), // Consolidado: era 3 colunas antes
+        'Data/Hora Fim': this.formatDateTime(lastConv.datetime),
         'Teve Retorno': teveRetorno ? 'Sim' : 'Não',
         'Telefone do Cliente': phone,
-        'Login do Operador': firstConv.userName || null,
-        'CPF/CNPJ': contact?.cpf || null,
-        Contrato: contact?.contract || null,
-        'Data e Hora ínicio da Conversa': `${this.formatDate(firstConv.datetime)} ${this.formatTime(firstConv.datetime)}`,
-        'Data e hora fim da Conversa': `${this.formatDate(lastConv.datetime)} ${this.formatTime(lastConv.datetime)}`,
-        Finalização: tabulation?.name || null,
-        Segmento: segment?.name || null,
-        Carteira: segment?.name || null,
+        'Login do Operador': firstConv.userName || 'Sem operador',
+        'CPF/CNPJ': contact?.cpf || 'N/A',
+        Contrato: contact?.contract || 'N/A',
+        Finalização: tabulation?.name || 'Sem finalização',
+        Segmento: segment?.name || 'Sem segmento',
+        Carteira: segment?.name || 'Sem carteira',
         Protocolo: firstConv.id,
       });
     });

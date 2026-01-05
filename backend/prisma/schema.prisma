@@ -97,7 +97,7 @@ model Tabulation {
 model Contact {
   id        Int       @id @default(autoincrement())
   name      String
-  phone     String
+  phone     String    @unique // Garantir que cada telefone seja único (não permite duplicatas)
   segment   Int?
   cpf       String?
   contract  String?
