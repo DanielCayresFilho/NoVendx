@@ -9,6 +9,7 @@ import {
   UseGuards,
   Query,
   Res,
+  StreamableFile,
 } from "@nestjs/common";
 import {
   ApiTags,
@@ -28,6 +29,7 @@ import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { PrismaService } from "../prisma.service";
 import { Response } from "express";
 import * as PDFDocument from "pdfkit";
+import { Readable } from "stream";
 
 @Controller("conversations")
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -268,11 +270,12 @@ export class ConversationsController {
 
   @Get("download-pdf/:phone")
   @Roles(Role.admin, Role.supervisor, Role.digital)
+  @ApiOperation({ summary: "Download conversa em PDF" })
+  @ApiResponse({ status: 200, description: "PDF gerado com sucesso" })
   async downloadConversationPdf(
     @Param("phone") phone: string,
-    @Res() res: Response,
     @CurrentUser() user: any
-  ) {
+  ): Promise<StreamableFile> {
     try {
       console.log(
         `📄 [GET /conversations/download-pdf/${phone}] Gerando PDF para conversa`
@@ -291,8 +294,7 @@ export class ConversationsController {
       );
 
       if (!conversation || conversation.length === 0) {
-        console.log(`📄 Conversa não encontrada para telefone ${phone}`);
-        return res.status(404).json({ message: "Conversa não encontrada" });
+        throw new Error("Conversa não encontrada");
       }
 
       // Buscar informações do contato
@@ -304,23 +306,14 @@ export class ConversationsController {
         `📄 Iniciando geração do PDF com ${conversation.length} mensagens`
       );
 
-      // Criar PDF
+      // Criar PDF em buffer
+      const buffers: Buffer[] = [];
       const doc = new PDFDocument({
         size: "A4",
         margin: 50,
       });
 
-      // Configurar headers para download
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename=conversa-${phone}-${
-          new Date().toISOString().split("T")[0]
-        }.pdf`
-      );
-
-      // Pipe do PDF diretamente para a resposta
-      doc.pipe(res);
+      doc.on("data", (chunk) => buffers.push(chunk));
 
       console.log(`📄 Headers configurados, iniciando escrita do PDF`);
 
@@ -372,12 +365,26 @@ export class ConversationsController {
       // Finalizar PDF
       doc.end();
 
+      // Aguardar o PDF ser gerado
+      await new Promise((resolve) => {
+        doc.on("end", resolve);
+      });
+
+      const pdfBuffer = Buffer.concat(buffers);
+
       console.log(`📄 PDF gerado com sucesso para conversa ${phone}`);
+
+      // Retornar StreamableFile
+      const stream = Readable.from(pdfBuffer);
+      return new StreamableFile(stream, {
+        type: "application/pdf",
+        disposition: `attachment; filename=conversa-${phone}-${
+          new Date().toISOString().split("T")[0]
+        }.pdf`,
+      });
     } catch (error) {
       console.error("❌ Erro ao gerar PDF:", error);
-      if (!res.headersSent) {
-        res.status(500).json({ message: "Erro ao gerar PDF da conversa" });
-      }
+      throw error;
     }
   }
 }
