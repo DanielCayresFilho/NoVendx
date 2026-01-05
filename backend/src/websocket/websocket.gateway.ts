@@ -2157,6 +2157,10 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       userLine: conversation.userLine,
     });
     
+    // Verificar se o modo compartilhado está ativo
+    const controlPanel = await this.controlPanelService.findOne();
+    const sharedLineMode = controlPanel?.sharedLineMode ?? false;
+    
     // Emitir para o operador específico que está atendendo (userId)
     if (conversation.userId) {
       const socketId = this.connectedUsers.get(conversation.userId);
@@ -2176,45 +2180,59 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       }
     }
     
-    // Se não tiver userId OU se o userId não estiver conectado, enviar para todos os operadores online da linha
-    if (!conversation.userId || !this.connectedUsers.has(conversation.userId)) {
-      if (conversation.userLine) {
-        console.log(`  → Fallback: Enviando para todos os operadores online da linha ${conversation.userLine}`);
-        const lineOperators = await (this.prisma as any).lineOperator.findMany({
-          where: { lineId: conversation.userLine },
-          include: { user: true },
-        });
+    // No modo compartilhado, SEMPRE enviar para todos os usuários da linha (não apenas se userId não estiver conectado)
+    // Fora do modo compartilhado, enviar apenas se userId não estiver conectado
+    const shouldEmitToAllLineUsers = sharedLineMode || !conversation.userId || !this.connectedUsers.has(conversation.userId);
+    
+    if (shouldEmitToAllLineUsers && conversation.userLine) {
+      console.log(`  → ${sharedLineMode ? 'Modo compartilhado: ' : 'Fallback: '}Enviando para todos os usuários online da linha ${conversation.userLine}`);
+      const lineOperators = await (this.prisma as any).lineOperator.findMany({
+        where: { lineId: conversation.userLine },
+        include: { user: true },
+      });
 
-        const onlineLineOperators = lineOperators.filter(lo => 
-          lo.user.status === 'Online' && lo.user.role === 'operator'
-        );
+      // No modo compartilhado, incluir todos os usuários (admins, operadores, etc)
+      // Fora do modo compartilhado, apenas operadores
+      const onlineLineOperators = lineOperators.filter(lo => {
+        if (sharedLineMode) {
+          // Modo compartilhado: incluir todos os usuários online (admins, operadores, supervisores)
+          return lo.user.status === 'Online' && 
+                 (lo.user.role === 'operator' || lo.user.role === 'admin' || lo.user.role === 'supervisor');
+        } else {
+          // Modo normal: apenas operadores
+          return lo.user.status === 'Online' && lo.user.role === 'operator';
+        }
+      });
 
-        console.log(`  → Encontrados ${onlineLineOperators.length} operador(es) online na linha ${conversation.userLine}`);
+      console.log(`  → Encontrados ${onlineLineOperators.length} usuário(s) online na linha ${conversation.userLine}`);
 
-        onlineLineOperators.forEach(lo => {
+      onlineLineOperators.forEach(lo => {
+        // No modo compartilhado, enviar para todos (mesmo que já tenha enviado para userId)
+        // Fora do modo compartilhado, não enviar duplicado se já enviou para userId
+        if (sharedLineMode || lo.userId !== conversation.userId) {
           const socketId = this.connectedUsers.get(lo.userId);
           if (socketId) {
-            console.log(`  → Enviando para ${lo.user.name} (${lo.user.role}) - operador da linha`);
+            console.log(`  → Enviando para ${lo.user.name} (${lo.user.role}) - usuário da linha`);
             this.server.to(socketId).emit('new_message', { message: conversation });
           } else {
-            console.warn(`  ⚠️ Operador ${lo.user.name} (${lo.userId}) não está conectado via WebSocket`);
+            console.warn(`  ⚠️ Usuário ${lo.user.name} (${lo.userId}) não está conectado via WebSocket`);
           }
-        });
-
-        // Se não encontrou nenhum operador online na linha, logar para debug
-        if (onlineLineOperators.length === 0) {
-          console.warn(`  ⚠️ Nenhum operador online encontrado na linha ${conversation.userLine} para receber a mensagem`);
-          console.log(`  → Operadores vinculados à linha:`, lineOperators.map(lo => ({
-            userId: lo.userId,
-            name: lo.user.name,
-            status: lo.user.status,
-            role: lo.user.role,
-            connected: this.connectedUsers.has(lo.userId),
-          })));
         }
-      } else {
-        console.warn(`  ⚠️ Conversa sem userId e sem userLine - não é possível enviar`);
+      });
+
+      // Se não encontrou nenhum usuário online na linha, logar para debug
+      if (onlineLineOperators.length === 0) {
+        console.warn(`  ⚠️ Nenhum usuário online encontrado na linha ${conversation.userLine} para receber a mensagem`);
+        console.log(`  → Usuários vinculados à linha:`, lineOperators.map(lo => ({
+          userId: lo.userId,
+          name: lo.user.name,
+          status: lo.user.status,
+          role: lo.user.role,
+          connected: this.connectedUsers.has(lo.userId),
+        })));
       }
+    } else if (!conversation.userLine) {
+      console.warn(`  ⚠️ Conversa sem userId e sem userLine - não é possível enviar`);
     }
 
     // Emitir para supervisores do segmento
