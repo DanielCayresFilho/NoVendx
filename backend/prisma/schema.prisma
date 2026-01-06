@@ -95,16 +95,17 @@ model Tabulation {
 }
 
 model Contact {
-  id        Int       @id @default(autoincrement())
-  name      String
-  phone     String    @unique // Garantir que cada telefone seja único (não permite duplicatas)
-  segment   Int?
-  cpf       String?
-  contract  String?
-  isCPC     Boolean   @default(false) // Se true, contato foi marcado como CPC
-  lastCPCAt DateTime? // Última vez que foi marcado como CPC (para temporizador)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id           Int       @id @default(autoincrement())
+  name         String
+  phone        String    @unique // Garantir que cada telefone seja único (não permite duplicatas)
+  segment      Int?
+  cpf          String?
+  contract     String?
+  isCPC        Boolean   @default(false) // Se true, contato foi marcado como CPC
+  lastCPCAt    DateTime? // Última vez que foi marcado como CPC (para temporizador)
+  isNameManual Boolean   @default(false) // Se true, nome foi definido manualmente pelo admin e não deve ser atualizado automaticamente
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([phone])
   @@index([cpf])

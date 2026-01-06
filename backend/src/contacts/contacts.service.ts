@@ -98,6 +98,11 @@ export class ContactsService {
       (updateContactDto as any).lastCPCAt = null;
     }
 
+    // Se o nome está sendo atualizado, marcar como manual para evitar sobrescrita automática
+    if (updateContactDto.name !== undefined && updateContactDto.name !== contact.name) {
+      (updateContactDto as any).isNameManual = true;
+    }
+
     // Atualizar o contato
     const updatedContact = await this.prisma.contact.update({
       where: { id: contact.id },

@@ -57,10 +57,8 @@ export class WebhooksService {
           // Em grupos, o remoteJid é o ID do grupo
           from = groupId || '';
 
-          // Tentar extrair nome do grupo (pode vir em message.messageContextInfo)
-          // IMPORTANTE: NÃO usar pushName como fallback (pushName é o nome de quem enviou, não do grupo)
-          groupName = message.message?.messageContextInfo?.quotedMessage?.groupMention?.subject
-            || 'Grupo sem nome'; // Nome padrão quando não encontra o nome do grupo
+          // Para grupos, iniciar com nome padrão e buscar o nome real via Evolution API
+          groupName = 'Grupo sem nome';
 
           // O participante que enviou está em message.participant ou message.key.participant
           const participant = message.participant || message.key.participant;
@@ -190,8 +188,8 @@ export class WebhooksService {
         // Para grupos, usar groupId como identificador; para contatos individuais, usar o número
         const contactIdentifier = isGroup ? (groupId || from) : from;
 
-        // Para grupos sem nome, tentar buscar o nome real via Evolution API
-        if (isGroup && groupName === 'Grupo sem nome' && groupId) {
+        // Para grupos, SEMPRE buscar o nome real via Evolution API
+        if (isGroup && groupId) {
           const evolution = await this.prisma.evolution.findUnique({
             where: { evolutionName: line.evolutionName },
           });
@@ -206,6 +204,9 @@ export class WebhooksService {
 
             if (realGroupName) {
               groupName = realGroupName;
+              console.log(`✅ [Webhook] Nome do grupo obtido via Evolution API: ${groupName}`);
+            } else {
+              console.warn(`⚠️ [Webhook] Não foi possível obter o nome do grupo via Evolution API, mantendo: ${groupName}`);
             }
           }
         }
@@ -219,19 +220,25 @@ export class WebhooksService {
           // Criar contato se não existir
           contact = await this.prisma.contact.create({
             data: {
-              name: isGroup ? groupName : (message.pushName || from), // Para grupos, usar groupName (agora pode ser o nome real da Evolution API)
+              name: isGroup ? groupName : (message.pushName || from), // Para grupos, usar groupName (agora é o nome real da Evolution API)
               phone: contactIdentifier,
               segment: line.segment,
+              isNameManual: false, // Nome vindo do webhook, não é manual
             },
           });
           console.log(`✅ [Webhook] Contato criado: ${contact.name} (${contactIdentifier}), IsGroup: ${isGroup}`);
-        } else if (isGroup && contact.name === 'Grupo sem nome' && groupName !== 'Grupo sem nome') {
-          // Se o contato existe com "Grupo sem nome" mas agora temos o nome real, atualizar
-          contact = await this.prisma.contact.update({
-            where: { id: contact.id },
-            data: { name: groupName },
-          });
-          console.log(`✅ [Webhook] Nome do grupo atualizado: ${groupName} (${contactIdentifier})`);
+        } else if (isGroup && !contact.isNameManual && groupName && groupName !== 'Grupo sem nome') {
+          // Se o contato existe, é grupo, NÃO tem nome manual e temos o nome real, atualizar
+          // Só atualiza se o nome for diferente do atual para evitar updates desnecessários
+          if (contact.name !== groupName) {
+            contact = await this.prisma.contact.update({
+              where: { id: contact.id },
+              data: { name: groupName },
+            });
+            console.log(`✅ [Webhook] Nome do grupo atualizado automaticamente: ${contact.name} -> ${groupName} (${contactIdentifier})`);
+          }
+        } else if (isGroup && contact.isNameManual) {
+          console.log(`ℹ️ [Webhook] Grupo ${contactIdentifier} tem nome manual (${contact.name}), não atualizando automaticamente`);
         }
 
         // Registrar resposta do cliente (reseta repescagem) - apenas para contatos individuais
@@ -456,6 +463,24 @@ export class WebhooksService {
           });
 
           if (line) {
+            // Buscar configuração da Evolution API para importar histórico
+            const evolution = await this.prisma.evolution.findUnique({
+              where: { evolutionName: line.evolutionName },
+            });
+
+            if (evolution) {
+              // Importar histórico de conversas em background (não esperar)
+              this.importRecentHistory(
+                line.id,
+                evolution.evolutionUrl,
+                evolution.evolutionKey,
+                instanceName
+              ).catch((error) => {
+                console.error(`❌ [Webhook] Erro ao importar histórico em background:`, error.message);
+              });
+
+              console.log(`📚 [Webhook] Importação de histórico iniciada em background para linha ${line.phone}`);
+            }
             // Verificar quantos operadores já estão vinculados à linha
             const currentOperatorsCount = await this.prisma.lineOperator.count({
               where: { lineId: line.id },
@@ -596,6 +621,177 @@ export class WebhooksService {
     } catch (error: any) {
       console.error(`❌ [Webhook] Erro ao buscar nome do grupo:`, error.message);
       return null;
+    }
+  }
+
+  /**
+   * Importa histórico de conversas recentes via Evolution API quando QR Code é escaneado
+   * @param lineId - ID da linha que foi conectada
+   * @param evolutionUrl - URL da Evolution API
+   * @param evolutionKey - Chave de autenticação
+   * @param instanceName - Nome da instância
+   */
+  async importRecentHistory(
+    lineId: number,
+    evolutionUrl: string,
+    evolutionKey: string,
+    instanceName: string
+  ): Promise<void> {
+    try {
+      console.log(`📚 [Webhook] Iniciando importação de histórico para linha ${lineId}...`);
+
+      const line = await this.prisma.linesStock.findUnique({
+        where: { id: lineId },
+        include: {
+          operators: {
+            include: {
+              user: true,
+            },
+          },
+        },
+      });
+
+      if (!line) {
+        console.error(`❌ [Webhook] Linha ${lineId} não encontrada`);
+        return;
+      }
+
+      // Buscar conversas recentes via Evolution API (últimas 20 conversas)
+      // Endpoint: /chat/findMessages/${instanceName}
+      const response = await axios.post(
+        `${evolutionUrl}/chat/findMessages/${instanceName}`,
+        {
+          limit: 20, // Limitar a 20 conversas mais recentes
+        },
+        {
+          headers: { apikey: evolutionKey },
+          timeout: 30000, // 30 segundos de timeout
+        }
+      );
+
+      if (!response.data || !Array.isArray(response.data)) {
+        console.warn(`⚠️ [Webhook] Nenhuma conversa encontrada no histórico`);
+        return;
+      }
+
+      console.log(`📥 [Webhook] ${response.data.length} conversas encontradas no histórico`);
+
+      let imported = 0;
+      let skipped = 0;
+
+      // Processar cada conversa
+      for (const chat of response.data) {
+        try {
+          const remoteJid = chat.id || chat.remoteJid;
+          if (!remoteJid) continue;
+
+          // Verificar se é grupo
+          const isGroup = remoteJid.includes('@g.us');
+          const contactPhone = remoteJid.replace('@s.whatsapp.net', '').replace('@c.us', '').replace('@lid', '');
+
+          // Para grupos, buscar nome via Evolution API
+          let contactName = chat.name || chat.pushName || contactPhone;
+          if (isGroup) {
+            const groupName = await this.fetchGroupName(remoteJid, evolutionUrl, evolutionKey, instanceName);
+            if (groupName) {
+              contactName = groupName;
+            }
+          }
+
+          // Verificar se já existe conversa para este contato
+          const existingConversation = await this.prisma.conversation.findFirst({
+            where: {
+              contactPhone: isGroup ? remoteJid : contactPhone,
+              userLine: lineId,
+            },
+          });
+
+          if (existingConversation) {
+            skipped++;
+            continue; // Já existe conversa, pular
+          }
+
+          // Buscar ou criar contato
+          let contact = await this.prisma.contact.findFirst({
+            where: { phone: isGroup ? remoteJid : contactPhone },
+          });
+
+          if (!contact) {
+            contact = await this.prisma.contact.create({
+              data: {
+                name: contactName,
+                phone: isGroup ? remoteJid : contactPhone,
+                segment: line.segment,
+                isNameManual: false,
+              },
+            });
+          }
+
+          // Buscar mensagens da conversa (últimas 10)
+          const messagesResponse = await axios.post(
+            `${evolutionUrl}/chat/findMessages/${instanceName}`,
+            {
+              where: {
+                key: {
+                  remoteJid: remoteJid,
+                },
+              },
+              limit: 10,
+            },
+            {
+              headers: { apikey: evolutionKey },
+              timeout: 10000,
+            }
+          );
+
+          const messages = messagesResponse.data || [];
+
+          // Importar mensagens
+          for (const msg of messages) {
+            try {
+              // Ignorar mensagens do próprio bot
+              if (msg.key?.fromMe) continue;
+
+              const messageText = msg.message?.conversation
+                || msg.message?.extendedTextMessage?.text
+                || msg.message?.imageMessage?.caption
+                || 'Mensagem importada';
+
+              const messageType = this.getMessageType(msg.message);
+              const sender = msg.key?.fromMe ? 'operator' : 'contact';
+              const datetime = msg.messageTimestamp
+                ? new Date(Number(msg.messageTimestamp) * 1000)
+                : new Date();
+
+              // Criar conversa
+              await this.conversationsService.create({
+                contactName: contactName,
+                contactPhone: isGroup ? remoteJid : contactPhone,
+                segment: line.segment,
+                userName: null,
+                userLine: lineId,
+                userId: null,
+                message: messageText,
+                sender: sender as any,
+                messageType,
+                isGroup,
+                groupId: isGroup ? remoteJid : undefined,
+                groupName: isGroup ? contactName : undefined,
+              });
+
+              imported++;
+            } catch (error: any) {
+              console.error(`❌ [Webhook] Erro ao importar mensagem:`, error.message);
+            }
+          }
+        } catch (error: any) {
+          console.error(`❌ [Webhook] Erro ao processar conversa:`, error.message);
+        }
+      }
+
+      console.log(`✅ [Webhook] Importação concluída: ${imported} mensagens importadas, ${skipped} conversas puladas`);
+    } catch (error: any) {
+      console.error(`❌ [Webhook] Erro ao importar histórico:`, error.message);
     }
   }
 
