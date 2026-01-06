@@ -155,6 +155,7 @@ export default function Atendimento() {
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
   const [segmentAllowsFreeMessage, setSegmentAllowsFreeMessage] =
     useState<boolean>(true); // Default true para não bloquear
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
 
   // Subscribe to new messages in real-time
   useRealtimeSubscription(
@@ -360,7 +361,12 @@ export default function Atendimento() {
   );
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messagesScrollRef.current) {
+      const scrollContainer = messagesScrollRef.current.querySelector('[data-radix-scroll-area-viewport]');
+      if (scrollContainer) {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      }
+    }
   };
 
   // Ref para armazenar o contactPhone selecionado (evita loop infinito)
@@ -703,6 +709,14 @@ export default function Atendimento() {
   useEffect(() => {
     scrollToBottom();
   }, [selectedConversation?.messages]);
+
+  // Scroll para o final quando selecionar uma conversa
+  useEffect(() => {
+    if (selectedConversation) {
+      // Pequeno delay para garantir que o DOM foi atualizado
+      setTimeout(() => scrollToBottom(), 100);
+    }
+  }, [selectedConversation?.contactPhone]);
 
   // Função para determinar o tipo de mídia baseado no mimetype
   const getMessageTypeFromMime = (
@@ -1811,7 +1825,7 @@ export default function Atendimento() {
               </Dialog>
 
               {/* Messages */}
-              <ScrollArea className="flex-1 p-4">
+              <ScrollArea ref={messagesScrollRef} className="flex-1 p-4">
                 <div className="space-y-4">
                   {selectedConversation.messages.map((msg) => (
                     <div

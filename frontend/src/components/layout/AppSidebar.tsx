@@ -200,14 +200,14 @@ export function AppSidebar() {
 
   return (
     <>
-      <aside className="w-64 min-h-screen bg-sidebar flex flex-col">
+      <aside className="w-64 h-screen bg-sidebar flex flex-col">
         {/* Logo */}
-        <div className="p-6 border-b border-sidebar-border flex justify-center">
+        <div className="p-4 border-b border-sidebar-border flex justify-center flex-shrink-0">
           <VendLogo size="xl" showText={false} />
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-4 overflow-y-auto">
+        <nav className="flex-1 p-3 overflow-y-auto scrollbar-thin scrollbar-thumb-sidebar-accent scrollbar-track-transparent">
           <ul className="space-y-1">
             {filteredItems.map((item) => {
               const isActive = location.pathname === item.url;
@@ -269,7 +269,7 @@ export function AppSidebar() {
         </nav>
 
         {/* User Profile */}
-        <div className="p-4 border-t border-sidebar-border">
+        <div className="p-4 border-t border-sidebar-border flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-cyan flex items-center justify-center">
               <span className="text-sm font-bold text-primary-foreground">
