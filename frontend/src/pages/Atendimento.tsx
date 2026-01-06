@@ -1624,9 +1624,7 @@ export default function Atendimento() {
                                     {
                                       method: "GET",
                                       headers: {
-                                        Authorization: `Bearer ${localStorage.getItem(
-                                          "token"
-                                        )}`,
+                                        Authorization: `Bearer ${getAuthToken()}`,
                                       },
                                     }
                                   );

@@ -29,6 +29,7 @@ import {
   Conversation as APIConversation,
   User,
   API_BASE_URL,
+  getAuthToken,
 } from "@/services/api";
 import { format } from "date-fns";
 import { useAuth } from "@/contexts/AuthContext";
@@ -351,9 +352,7 @@ export default function Supervisionar() {
                             {
                               method: "GET",
                               headers: {
-                                Authorization: `Bearer ${localStorage.getItem(
-                                  "token"
-                                )}`,
+                                Authorization: `Bearer ${getAuthToken()}`,
                               },
                             }
                           );
