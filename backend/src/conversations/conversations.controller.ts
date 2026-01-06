@@ -28,7 +28,7 @@ import { Role } from "@prisma/client";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { PrismaService } from "../prisma.service";
 import { Response } from "express";
-import * as PDFDocument from "pdfkit";
+import PDFDocument from "pdfkit";
 import { Readable } from "stream";
 
 @Controller("conversations")
