@@ -207,7 +207,7 @@ export function AppSidebar() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-3 overflow-y-auto scrollbar-thin scrollbar-thumb-sidebar-accent scrollbar-track-transparent">
+        <nav className="flex-1 p-3 overflow-y-auto scrollbar-sidebar">
           <ul className="space-y-1">
             {filteredItems.map((item) => {
               const isActive = location.pathname === item.url;

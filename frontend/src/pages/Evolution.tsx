@@ -256,8 +256,10 @@ export default function Evolution() {
   if (isLoading) {
     return (
       <MainLayout>
-        <div className="flex items-center justify-center h-64">
+        <div className="h-full overflow-y-auto scrollbar-content">
+          <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
         </div>
       </MainLayout>
     );
@@ -266,7 +268,7 @@ export default function Evolution() {
   return (
     <MainLayout>
       <div className="animate-fade-in">
-        <CrudTable
+          <CrudTable
           title="Evolution API"
           subtitle="Gerenciar instâncias da Evolution API"
           columns={columns}

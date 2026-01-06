@@ -245,7 +245,8 @@ export default function Acompanhamento() {
 
   return (
     <MainLayout>
-      <div className="space-y-6 p-6">
+      <div className="h-full overflow-y-auto scrollbar-content">
+        <div className="space-y-6 p-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -568,6 +569,7 @@ export default function Acompanhamento() {
             </div>
           </TabsContent>
         </Tabs>
+        </div>
       </div>
     </MainLayout>
   );

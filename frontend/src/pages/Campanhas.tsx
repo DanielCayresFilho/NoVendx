@@ -277,7 +277,8 @@ export default function Campanhas() {
 
   return (
     <MainLayout>
-      <div className="space-y-6 animate-fade-in">
+      <div className="h-full overflow-y-auto scrollbar-content">
+        <div className="space-y-6 animate-fade-in">
         {/* Create Campaign */}
         <GlassCard>
           <h2 className="text-xl font-semibold text-foreground mb-6">Criar Campanha</h2>
@@ -462,6 +463,7 @@ export default function Campanhas() {
           )}
         </DialogContent>
       </Dialog>
+      </div>
     </MainLayout>
   );
 }

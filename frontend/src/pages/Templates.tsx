@@ -323,7 +323,8 @@ export default function Templates() {
 
   return (
     <MainLayout>
-      <div className="space-y-6 animate-fade-in">
+      <div className="h-full overflow-y-auto scrollbar-content">
+        <div className="space-y-6 animate-fade-in">
         {/* Filters */}
         <GlassCard>
           <div className="flex items-center justify-between mb-4">
@@ -620,6 +621,7 @@ export default function Templates() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </div>
     </MainLayout>
   );
 }

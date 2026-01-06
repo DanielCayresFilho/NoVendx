@@ -498,60 +498,63 @@ export default function Linhas() {
   if (isLoading) {
     return (
       <MainLayout>
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="h-full overflow-y-auto scrollbar-content">
+          <div className="flex items-center justify-center h-64">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
         </div>
-      </MainLayout>
+    </MainLayout>
     );
   }
 
   return (
     <MainLayout>
-      <div className="animate-fade-in">
-        <div className="mb-4 flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Label htmlFor="statusFilter">Filtrar por Status:</Label>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Todos os status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="active">Ativas</SelectItem>
-                <SelectItem value="banned">Banidas</SelectItem>
-              </SelectContent>
-            </Select>
+      <div className="h-full overflow-y-auto scrollbar-content">
+        <div className="animate-fade-in">
+          <div className="mb-4 flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="statusFilter">Filtrar por Status:</Label>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Todos os status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="active">Ativas</SelectItem>
+                  <SelectItem value="banned">Banidas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
+          <CrudTable
+            title="Linhas WhatsApp"
+            subtitle="Gerenciar linhas de atendimento"
+            columns={columns}
+            data={lines}
+            searchPlaceholder="Buscar linhas..."
+            onAdd={handleAdd}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            renderForm={renderForm}
+            isFormOpen={isFormOpen}
+            onFormOpenChange={setIsFormOpen}
+            editingItem={editingLine}
+            renderActions={(line) => (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-whatsapp hover:text-whatsapp"
+                onClick={() => handleShowQrCode(line)}
+                title="Ver QR Code"
+              >
+                <QrCode className="h-4 w-4" />
+              </Button>
+            )}
+          />
         </div>
-        <CrudTable
-          title="Linhas WhatsApp"
-          subtitle="Gerenciar linhas de atendimento"
-          columns={columns}
-          data={lines}
-          searchPlaceholder="Buscar linhas..."
-          onAdd={handleAdd}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
-          renderForm={renderForm}
-          isFormOpen={isFormOpen}
-          onFormOpenChange={setIsFormOpen}
-          editingItem={editingLine}
-          renderActions={(line) => (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-whatsapp hover:text-whatsapp"
-              onClick={() => handleShowQrCode(line)}
-              title="Ver QR Code"
-            >
-              <QrCode className="h-4 w-4" />
-            </Button>
-          )}
-        />
-      </div>
 
-      {/* QR Code Modal */}
-      <Dialog open={isQrCodeOpen} onOpenChange={setIsQrCodeOpen}>
+        {/* QR Code Modal */}
+        <Dialog open={isQrCodeOpen} onOpenChange={setIsQrCodeOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>QR Code da Linha</DialogTitle>
@@ -608,6 +611,7 @@ export default function Linhas() {
           </div>
         </DialogContent>
       </Dialog>
+      </div>
     </MainLayout>
   );
 }

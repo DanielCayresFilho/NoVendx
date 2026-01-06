@@ -262,7 +262,8 @@ export default function Dashboard() {
 
   return (
     <MainLayout>
-      <div className="flex flex-col gap-6 p-6 max-w-7xl mx-auto">
+      <div className="h-full overflow-y-auto scrollbar-content">
+        <div className="flex flex-col gap-6 p-6 max-w-7xl mx-auto">
         {/* Welcome Card */}
         <GlassCard className="w-full animate-fade-in" padding="lg">
           <div className="flex flex-col md:flex-row items-center gap-6">
@@ -434,6 +435,7 @@ export default function Dashboard() {
             )}
           </GlassCard>
         </div>
+      </div>
       </div>
     </MainLayout>
   );

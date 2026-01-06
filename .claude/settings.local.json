@@ -19,7 +19,19 @@
       "Bash(cat:*)",
       "Bash(psql:*)",
       "WebFetch(domain:doc.evolution-api.com)",
-      "Bash(npm run start:dev:*)"
+      "Bash(npm run start:dev:*)",
+      "Bash(ls:*)",
+      "Bash(xargs:*)",
+      "Bash(done)",
+      "Bash(for file in Templates.tsx Usuarios.tsx Segmentos.tsx Tags.tsx LogsAPI.tsx ProdutividadeAtivadores.tsx Relatorios.tsx Evolution.tsx Linhas.tsx Blocklist.tsx Contatos.tsx Campanhas.tsx Tabulacoes.tsx OperadoresOnline.tsx PainelControle.tsx)",
+      "Bash(do if [ -f \"$file\" ])",
+      "Bash(then echo \"Encontrado: $file\")",
+      "Bash(fi)",
+      "Bash(chmod:*)",
+      "Bash(python3:*)",
+      "Bash(for file in *.tsx)",
+      "Bash(do tail -5 \"$file\")",
+      "Bash(1)"
     ]
   }
 }

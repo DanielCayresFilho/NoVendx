@@ -261,8 +261,9 @@ export default function Contatos() {
 
   return (
     <MainLayout>
-      <div className="animate-fade-in">
-        <CrudTable
+      <div className="h-full overflow-y-auto scrollbar-content">
+        <div className="animate-fade-in">
+          <CrudTable
           title="Contatos"
           subtitle="Gerenciar contatos do sistema"
           columns={columns}
@@ -276,6 +277,7 @@ export default function Contatos() {
           onFormOpenChange={setIsFormOpen}
           editingItem={editingContact}
         />
+      </div>
       </div>
     </MainLayout>
   );

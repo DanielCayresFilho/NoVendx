@@ -81,6 +81,7 @@ export class LinesService {
         instanceName,
         qrcode: true,
         integration: 'WHATSAPP-BAILEYS',
+        syncFullHistory: true, // Sincronizar histórico completo ao conectar
       };
 
       console.log('📡 Criando instância na Evolution:', {
@@ -120,9 +121,15 @@ export class LinesService {
           webhook_by_events: true,
           webhook_base64: enableBase64, // Ativa base64 apenas se linha tiver receiveMedia = true
           events: [
-            'MESSAGES_UPSERT',    // Mensagens recebidas/enviadas
+            'QRCODE_UPDATED',      // QR Code atualizado
+            'MESSAGES_UPSERT',     // Mensagens recebidas/enviadas
             'MESSAGES_UPDATE',     // Atualização de status (sent, delivered, read)
+            'MESSAGES_DELETE',     // Mensagem deletada
+            'SEND_MESSAGE',        // Mensagem enviada
             'CONNECTION_UPDATE',   // Atualização de conexão
+            'CHATS_UPSERT',        // Chat criado/atualizado
+            'CONTACTS_UPDATE',     // Contato atualizado
+            'GROUPS_UPSERT',       // Grupo criado/atualizado
           ],
         };
 
@@ -163,9 +170,15 @@ export class LinesService {
                 webhook_by_events: true,
                 webhook_base64: enableBase64,
                 events: [
+                  'QRCODE_UPDATED',
                   'MESSAGES_UPSERT',
                   'MESSAGES_UPDATE',
+                  'MESSAGES_DELETE',
+                  'SEND_MESSAGE',
                   'CONNECTION_UPDATE',
+                  'CHATS_UPSERT',
+                  'CONTACTS_UPDATE',
+                  'GROUPS_UPSERT',
                 ],
               },
             };
@@ -195,6 +208,44 @@ export class LinesService {
         } else {
           console.warn('⚠️ Webhook não configurado automaticamente. Configure manualmente na Evolution API.');
         }
+      }
+
+      // Configurar settings da instância
+      try {
+        const settingsData = {
+          reject_call: false,
+          msg_call: '',
+          groups_ignore: false,
+          always_online: true,
+          read_messages: false,
+          read_status: false,
+          sync_full_history: true, // Importante: sincronizar histórico completo
+        };
+
+        console.log('⚙️ Configurando settings da instância:', {
+          instanceName,
+          settingsData,
+        });
+
+        const settingsResponse = await axios.post(
+          `${evolution.evolutionUrl}/settings/set/${instanceName}`,
+          settingsData,
+          {
+            headers: {
+              'apikey': evolution.evolutionKey,
+              'Content-Type': 'application/json',
+            },
+            timeout: 10000,
+          }
+        );
+
+        console.log('✅ Settings configurados com sucesso:', settingsResponse.data);
+      } catch (settingsError) {
+        console.error('⚠️ Erro ao configurar settings:', {
+          error: settingsError.message,
+          response: JSON.stringify(settingsError.response?.data, null, 2),
+        });
+        console.warn('⚠️ Settings não configurados automaticamente. A instância funcionará com configurações padrão.');
       }
 
       // Criar linha no banco

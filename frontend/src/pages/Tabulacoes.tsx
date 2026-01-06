@@ -180,8 +180,10 @@ export default function Tabulacoes() {
   if (isLoading) {
     return (
       <MainLayout>
-        <div className="flex items-center justify-center h-64">
+        <div className="h-full overflow-y-auto scrollbar-content">
+          <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
         </div>
       </MainLayout>
     );
@@ -189,21 +191,23 @@ export default function Tabulacoes() {
 
   return (
     <MainLayout>
-      <div className="animate-fade-in">
-        <CrudTable
-          title="Tabulações"
-          subtitle="Gerenciar tipos de finalização de atendimento"
-          columns={columns}
-          data={tabulations}
-          searchPlaceholder="Buscar tabulações..."
-          onAdd={handleAdd}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
-          renderForm={renderForm}
-          isFormOpen={isFormOpen}
-          onFormOpenChange={setIsFormOpen}
-          editingItem={editingTabulation}
-        />
+      <div className="h-full overflow-y-auto scrollbar-content">
+        <div className="animate-fade-in">
+          <CrudTable
+            title="Tabulações"
+            subtitle="Gerenciar tipos de finalização de atendimento"
+            columns={columns}
+            data={tabulations}
+            searchPlaceholder="Buscar tabulações..."
+            onAdd={handleAdd}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            renderForm={renderForm}
+            isFormOpen={isFormOpen}
+            onFormOpenChange={setIsFormOpen}
+            editingItem={editingTabulation}
+          />
+        </div>
       </div>
     </MainLayout>
   );

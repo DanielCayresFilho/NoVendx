@@ -139,7 +139,8 @@ export default function OperadoresOnline() {
 
   return (
     <MainLayout>
-      <div className="space-y-6 animate-fade-in">
+      <div className="h-full overflow-y-auto scrollbar-content">
+        <div className="space-y-6 animate-fade-in">
         {/* Header */}
         <GlassCard>
           <div className="flex items-center justify-between mb-6">
@@ -351,6 +352,7 @@ export default function OperadoresOnline() {
           </div>
         </DialogContent>
       </Dialog>
+      </div>
     </MainLayout>
   );
 }

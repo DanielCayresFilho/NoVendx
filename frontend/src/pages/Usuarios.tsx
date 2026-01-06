@@ -557,8 +557,10 @@ export default function Usuarios() {
   if (isLoading) {
     return (
       <MainLayout>
-        <div className="flex items-center justify-center h-64">
+        <div className="h-full overflow-y-auto scrollbar-content">
+          <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
         </div>
       </MainLayout>
     );
@@ -566,7 +568,8 @@ export default function Usuarios() {
 
   return (
     <MainLayout>
-      <div className="animate-fade-in">
+      <div className="h-full overflow-y-auto scrollbar-content">
+        <div className="animate-fade-in">
         <div className="mb-4 flex justify-end gap-2">
           <input
             ref={fileInputRef}
@@ -608,6 +611,7 @@ export default function Usuarios() {
           onFormOpenChange={setIsFormOpen}
           editingItem={editingUser}
         />
+        </div>
       </div>
     </MainLayout>
   );
