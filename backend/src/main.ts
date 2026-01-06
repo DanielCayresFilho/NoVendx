@@ -3,9 +3,14 @@ import { AppModule } from './app.module';
 import { ValidationPipe, BadRequestException } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import compression from 'compression';
+import * as bodyParser from 'body-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Aumentar limite de upload para 200MB
+  app.use(bodyParser.json({ limit: '200mb' }));
+  app.use(bodyParser.urlencoded({ limit: '200mb', extended: true }));
 
   // CORS
   app.enableCors({

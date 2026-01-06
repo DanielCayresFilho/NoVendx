@@ -217,6 +217,12 @@ export class WebhooksService {
         });
 
         if (!contact) {
+          // Para grupos, só criar se conseguiu buscar o nome real
+          if (isGroup && (!groupName || groupName === 'Grupo sem nome')) {
+            console.warn(`⚠️ [Webhook] Não foi possível obter nome do grupo, ignorando criação do contato por enquanto...`);
+            return { status: 'ignored', reason: 'Could not fetch group name' };
+          }
+
           // Criar contato se não existir
           contact = await this.prisma.contact.create({
             data: {
@@ -595,33 +601,46 @@ export class WebhooksService {
     evolutionKey: string,
     instanceName: string
   ): Promise<string | null> {
-    try {
-      console.log(`🔍 [Webhook] Buscando nome do grupo ${groupId} via Evolution API...`);
+    // Tentar 2 vezes antes de desistir
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        console.log(`🔍 [Webhook] Buscando nome do grupo ${groupId} via Evolution API (tentativa ${attempt}/2)...`);
 
-      const response = await axios.get(
-        `${evolutionUrl}/group/fetchAllGroups/${instanceName}`,
-        {
-          headers: { apikey: evolutionKey },
-          timeout: 5000, // 5 segundos de timeout
+        const response = await axios.get(
+          `${evolutionUrl}/group/fetchAllGroups/${instanceName}`,
+          {
+            headers: { apikey: evolutionKey },
+            timeout: 10000, // 10 segundos de timeout
+          }
+        );
+
+        if (response.data && Array.isArray(response.data)) {
+          // Procurar o grupo específico no array retornado
+          const group = response.data.find((g: any) => g.id === groupId);
+
+          if (group && group.subject) {
+            console.log(`✅ [Webhook] Nome do grupo encontrado: ${group.subject}`);
+            return group.subject;
+          }
         }
-      );
 
-      if (response.data && Array.isArray(response.data)) {
-        // Procurar o grupo específico no array retornado
-        const group = response.data.find((g: any) => g.id === groupId);
+        console.warn(`⚠️ [Webhook] Grupo ${groupId} não encontrado na resposta da Evolution API (tentativa ${attempt}/2)`);
 
-        if (group && group.subject) {
-          console.log(`✅ [Webhook] Nome do grupo encontrado: ${group.subject}`);
-          return group.subject;
+        // Se primeira tentativa falhou, aguardar 1 segundo antes de tentar novamente
+        if (attempt === 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      } catch (error: any) {
+        console.error(`❌ [Webhook] Erro ao buscar nome do grupo (tentativa ${attempt}/2):`, error.message);
+
+        // Se primeira tentativa falhou, aguardar 1 segundo antes de tentar novamente
+        if (attempt === 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
-
-      console.warn(`⚠️ [Webhook] Grupo ${groupId} não encontrado na resposta da Evolution API`);
-      return null;
-    } catch (error: any) {
-      console.error(`❌ [Webhook] Erro ao buscar nome do grupo:`, error.message);
-      return null;
     }
+
+    return null;
   }
 
   /**
@@ -698,19 +717,6 @@ export class WebhooksService {
             }
           }
 
-          // Verificar se já existe conversa para este contato
-          const existingConversation = await this.prisma.conversation.findFirst({
-            where: {
-              contactPhone: isGroup ? remoteJid : contactPhone,
-              userLine: lineId,
-            },
-          });
-
-          if (existingConversation) {
-            skipped++;
-            continue; // Já existe conversa, pular
-          }
-
           // Buscar ou criar contato
           let contact = await this.prisma.contact.findFirst({
             where: { phone: isGroup ? remoteJid : contactPhone },
@@ -746,6 +752,15 @@ export class WebhooksService {
 
           const messages = messagesResponse.data || [];
 
+          // Encontrar operador online para vincular
+          const onlineOperator = line.operators.find(lo =>
+            lo.user.status === 'Online' &&
+            (lo.user.role === 'operator' || lo.user.role === 'admin' || lo.user.role === 'supervisor')
+          );
+
+          const operatorId = onlineOperator?.userId || null;
+          const operatorName = onlineOperator?.user.name || null;
+
           // Importar mensagens
           for (const msg of messages) {
             try {
@@ -763,14 +778,32 @@ export class WebhooksService {
                 ? new Date(Number(msg.messageTimestamp) * 1000)
                 : new Date();
 
-              // Criar conversa
+              // Verificar se já existe essa mensagem específica (pelo texto e timestamp)
+              const existingMessage = await this.prisma.conversation.findFirst({
+                where: {
+                  contactPhone: isGroup ? remoteJid : contactPhone,
+                  userLine: lineId,
+                  message: messageText,
+                  createdAt: {
+                    gte: new Date(datetime.getTime() - 1000), // 1 segundo antes
+                    lte: new Date(datetime.getTime() + 1000), // 1 segundo depois
+                  },
+                },
+              });
+
+              if (existingMessage) {
+                skipped++;
+                continue; // Mensagem já existe, pular
+              }
+
+              // Criar conversa vinculada ao operador online (se houver)
               await this.conversationsService.create({
                 contactName: contactName,
                 contactPhone: isGroup ? remoteJid : contactPhone,
                 segment: line.segment,
-                userName: null,
+                userName: operatorName,
                 userLine: lineId,
-                userId: null,
+                userId: operatorId, // Vincular ao operador online
                 message: messageText,
                 sender: sender as any,
                 messageType,
