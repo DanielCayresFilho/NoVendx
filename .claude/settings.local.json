@@ -39,7 +39,9 @@
       "Bash(cd:*)",
       "Bash(node insert_filter_validation.js:*)",
       "Bash(node patch_modules.js:*)",
-      "Bash(node relax_validation.js:*)"
+      "Bash(node relax_validation.js:*)",
+      "Bash(node add_contact_creation.js:*)",
+      "Bash(node add_contact_creation2.js:*)"
     ]
   }
 }

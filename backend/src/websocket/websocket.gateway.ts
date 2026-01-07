@@ -1605,14 +1605,78 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
       // isGroup já foi definido no início do try block (linha ~880)
       // Buscar contato (para grupos, usar groupId como phone)
-      const contact = await this.prisma.contact.findFirst({
+      let contact = await this.prisma.contact.findFirst({
         where: { phone: data.contactPhone },
       });
+
+      // Se contato não existe, criar automaticamente buscando info da Evolution API
+      if (!contact) {
+        let contactName = data.contactPhone; // Fallback: usar telefone
+
+        try {
+          // Tentar buscar informações do contato na Evolution API
+          if (isGroup) {
+            // Para grupos, buscar metadados do grupo
+            try {
+              const groupMetadata = await axios.get(
+                `${evolution.evolutionUrl}/group/fetchAllParticipants/${instanceName}`,
+                {
+                  params: { groupJid: data.contactPhone },
+                  headers: { 'apikey': evolution.evolutionKey },
+                  timeout: 5000,
+                }
+              );
+
+              if (groupMetadata.data?.subject) {
+                contactName = groupMetadata.data.subject;
+              } else {
+                contactName = `Grupo ${data.contactPhone}`;
+              }
+            } catch (groupError) {
+              console.warn(`⚠️ [WebSocket] Não foi possível buscar nome do grupo: ${groupError.message}`);
+              contactName = `Grupo ${data.contactPhone}`;
+            }
+          } else {
+            // Para contatos individuais, buscar perfil do WhatsApp
+            try {
+              const profilePic = await axios.get(
+                `${evolution.evolutionUrl}/chat/fetchProfile/${instanceName}`,
+                {
+                  params: { number: data.contactPhone.replace(/\D/g, '') },
+                  headers: { 'apikey': evolution.evolutionKey },
+                  timeout: 5000,
+                }
+              );
+
+              // A API retorna { name: "Nome do Contato", ... }
+              if (profilePic.data?.name) {
+                contactName = profilePic.data.name;
+              }
+            } catch (profileError) {
+              console.warn(`⚠️ [WebSocket] Não foi possível buscar perfil do contato: ${profileError.message}`);
+            }
+          }
+        } catch (error) {
+          console.warn(`⚠️ [WebSocket] Erro ao buscar informações do contato na Evolution: ${error.message}`);
+        }
+
+        // Criar contato no banco de dados
+        contact = await this.prisma.contact.create({
+          data: {
+            name: contactName,
+            phone: data.contactPhone,
+            segment: user.segment,
+            isNameManual: false,
+          },
+        });
+
+        console.log(`✅ [WebSocket] Contato criado automaticamente: ${contact.name} (${data.contactPhone})`);
+      }
 
       // Salvar conversa usando a linha ATUAL do operador
       // Isso garante que mesmo se a linha foi trocada, a mensagem vai pela linha atual
       const conversation = await this.conversationsService.create({
-        contactName: contact?.name || (isGroup ? `Grupo ${data.contactPhone}` : 'Desconhecido'),
+        contactName: contact.name, // Agora sempre terá um nome válido
         contactPhone: data.contactPhone,
         segment: user.segment,
         userName: user.name,
