@@ -30,6 +30,22 @@ export class OperatorQueueService {
    */
   async addToQueue(userId: number, segmentId: number | null, priority: number = 0): Promise<void> {
     try {
+      // Verificar role do usuário
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { role: true },
+      });
+
+      // IMPORTANTE: Admins NÃO podem entrar na fila de espera automática
+      if (user?.role === 'admin') {
+        this.logger.warn(
+          `Tentativa de adicionar admin ${userId} à fila foi bloqueada`,
+          'OperatorQueue',
+          { userId },
+        );
+        return;
+      }
+
       // Verificar se já está na fila
       const existing = await this.prisma.operatorQueue.findFirst({
         where: {

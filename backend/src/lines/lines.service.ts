@@ -5,6 +5,7 @@ import { UpdateLineDto } from './dto/update-line.dto';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { ControlPanelService } from '../control-panel/control-panel.service';
 import { SystemEventsService, EventType, EventModule, EventSeverity } from '../system-events/system-events.service';
+import { HealthCheckCacheService } from '../health-check-cache/health-check-cache.service';
 import axios from 'axios';
 
 @Injectable()
@@ -15,6 +16,7 @@ export class LinesService {
     private websocketGateway: WebsocketGateway,
     private controlPanelService: ControlPanelService,
     private systemEventsService: SystemEventsService,
+    private healthCheckCacheService: HealthCheckCacheService,
   ) {}
 
   async create(createLineDto: CreateLineDto, createdBy?: number) {
@@ -466,6 +468,30 @@ export class LinesService {
 
   async update(id: number, updateLineDto: UpdateLineDto) {
     const currentLine = await this.findOne(id);
+
+    // PROTEÇÃO: Segmento da linha NÃO pode ser alterado após vinculação
+    // Somente linhas com segmento null ou "Padrão" podem mudar de segmento
+    if (updateLineDto.segment !== undefined) {
+      const defaultSegment = await this.prisma.segment.findUnique({
+        where: { name: 'Padrão' },
+      });
+
+      const isDefaultSegment = currentLine.segment === defaultSegment?.id;
+      const isNullSegment = currentLine.segment === null;
+
+      // Verificar se a linha já tem operadores vinculados
+      const hasOperators = await this.prisma.lineOperator.count({
+        where: { lineId: id },
+      });
+
+      if (hasOperators > 0 && !isNullSegment && !isDefaultSegment) {
+        // Linha já foi vinculada a um segmento e não pode ser alterada
+        throw new BadRequestException(
+          'Não é possível alterar o segmento de uma linha que já foi vinculada a operadores. ' +
+          'O segmento é definido automaticamente na primeira vinculação e não pode mais ser alterado.'
+        );
+      }
+    }
 
     // Se receiveMedia foi alterado, reconfigurar webhook
     if (updateLineDto.receiveMedia !== undefined && updateLineDto.receiveMedia !== currentLine.receiveMedia) {
@@ -1135,6 +1161,64 @@ export class LinesService {
       const activeEvolutions = await this.controlPanelService.getActiveEvolutions();
       if (activeEvolutions && activeEvolutions.length > 0 && !activeEvolutions.includes(line.evolutionName)) {
         throw new BadRequestException(`Linha da evolution '${line.evolutionName}' não está ativa para atribuição`);
+      }
+
+      // NOVA VALIDAÇÃO: Verificar se a linha está realmente conectada no WhatsApp (Evolution API)
+      const evolution = await tx.evolution.findUnique({
+        where: { evolutionName: line.evolutionName },
+      });
+
+      if (evolution) {
+        const instanceName = `line_${line.phone.replace(/\D/g, '')}`;
+
+        try {
+          const connectionStatus = await this.healthCheckCacheService.getConnectionStatus(
+            evolution.evolutionUrl,
+            evolution.evolutionKey,
+            instanceName
+          );
+
+          // Verificar se status é 'Connected' (open, OPEN, connected, CONNECTED)
+          const isConnected = connectionStatus === 'open' ||
+                             connectionStatus === 'OPEN' ||
+                             connectionStatus === 'connected' ||
+                             connectionStatus === 'CONNECTED';
+
+          // Rejeitar se status for 'Disconnected' ou 'Connecting'
+          const isDisconnected = connectionStatus === 'close' ||
+                                connectionStatus === 'CLOSE' ||
+                                connectionStatus === 'disconnected' ||
+                                connectionStatus === 'DISCONNECTED' ||
+                                connectionStatus === 'closeTimeout';
+
+          const isConnecting = connectionStatus === 'connecting' ||
+                              connectionStatus === 'CONNECTING';
+
+          if (isDisconnected) {
+            throw new BadRequestException(`Linha ${line.phone} está desconectada. Não é possível vincular ao operador.`);
+          }
+
+          if (isConnecting) {
+            throw new BadRequestException(`Linha ${line.phone} está se conectando. Aguarde a conexão ser estabelecida antes de vincular.`);
+          }
+
+          if (!isConnected) {
+            // Status desconhecido ou outro status inválido
+            throw new BadRequestException(`Linha ${line.phone} não está em estado 'Connected' (status atual: ${connectionStatus}). Somente linhas conectadas podem ser vinculadas.`);
+          }
+
+          console.log(`✅ [assignOperatorToLine] Linha ${line.phone} validada como Connected (${connectionStatus})`);
+        } catch (healthError: any) {
+          // Se já for um BadRequestException, relançar
+          if (healthError instanceof BadRequestException) {
+            throw healthError;
+          }
+
+          // Se for erro de comunicação com a API, informar
+          console.error(`❌ [assignOperatorToLine] Erro ao verificar status da linha ${line.phone}:`, healthError.message);
+          throw new BadRequestException(`Não foi possível verificar o status de conexão da linha ${line.phone}. Tente novamente.`);
+        }
+
       }
 
       // Verificar se o modo compartilhado está ativo

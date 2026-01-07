@@ -31,7 +31,14 @@
       "Bash(python3:*)",
       "Bash(for file in *.tsx)",
       "Bash(do tail -5 \"$file\")",
-      "Bash(1)"
+      "Bash(1)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(wc:*)",
+      "Bash(bash:*)",
+      "Bash(cd:*)",
+      "Bash(node insert_filter_validation.js:*)",
+      "Bash(node patch_modules.js:*)"
     ]
   }
 }

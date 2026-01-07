@@ -155,7 +155,8 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         }
 
         // Se for operador sem linha, verificar se há linha disponível para vincular
-        if (!user.line) {
+        // IMPORTANTE: Admins NÃO recebem linhas automaticamente
+        if (!user.line && user.role === 'operator') {
           let availableLine = null;
 
           // 1. Primeiro, tentar buscar linha do mesmo segmento do operador

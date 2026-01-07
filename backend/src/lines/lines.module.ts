@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma.service';
 import { WebsocketModule } from '../websocket/websocket.module';
 import { ControlPanelModule } from '../control-panel/control-panel.module';
 import { SystemEventsModule } from '../system-events/system-events.module';
+import { HealthCheckCacheModule } from '../health-check-cache/health-check-cache.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { SystemEventsModule } from '../system-events/system-events.module';
     forwardRef(() => WebsocketModule),
     ControlPanelModule,
     SystemEventsModule,
+    HealthCheckCacheModule,
   ],
   controllers: [LinesController],
   providers: [LinesService, LinesSchedulerService, PrismaService],

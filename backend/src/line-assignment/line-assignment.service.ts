@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma.service';
 import { LinesService } from '../lines/lines.service';
 import { ControlPanelService } from '../control-panel/control-panel.service';
 import { AppLoggerService } from '../logger/logger.service';
+import { HealthCheckCacheService } from '../health-check-cache/health-check-cache.service';
 
 interface LineAssignmentResult {
   success: boolean;
@@ -19,6 +20,7 @@ export class LineAssignmentService {
     private linesService: LinesService,
     private controlPanelService: ControlPanelService,
     private logger: AppLoggerService,
+    private healthCheckCacheService: HealthCheckCacheService,
   ) {}
 
   /**
@@ -47,6 +49,11 @@ export class LineAssignmentService {
         return { success: false, reason: 'Usuário não encontrado' };
       }
 
+      // IMPORTANTE: Admins NÃO recebem linhas automaticamente
+      if (user.role === 'admin') {
+        return { success: false, reason: 'Admins não recebem linhas automaticamente' };
+      }
+
       // Se já tem linha ativa E não é para excluir essa linha, retornar
       if (user.line && (!excludeLineId || user.line !== excludeLineId)) {
         const existingLine = await this.prisma.linesStock.findUnique({
@@ -68,12 +75,18 @@ export class LineAssignmentService {
       }
 
       // Buscar linhas disponíveis seguindo prioridade:
-      // 1. Linhas do segmento do operador
-      // 2. Linhas com segmento null
-      // 3. Linhas do segmento "Padrão"
-      // 4. Qualquer linha ativa
+      // 1. Linhas do segmento do operador (que já foram vinculadas a esse segmento)
+      // 2. Linhas com segmento null (nunca foram vinculadas)
+      // 3. Linhas do segmento "Padrão" (podem ser alocadas para qualquer segmento)
+      // IMPORTANTE: Linhas de outros segmentos NUNCA podem ser alocadas
 
       const activeEvolutions = await this.controlPanelService.getActiveEvolutions();
+
+      // Buscar segmento "Padrão" para usar na query
+      const defaultSegment = await this.prisma.segment.findUnique({
+        where: { name: 'Padrão' },
+      });
+
       const availableLines = await this.controlPanelService.filterLinesByActiveEvolutions(
         await this.prisma.linesStock.findMany({
           where: {
@@ -86,6 +99,7 @@ export class LineAssignmentService {
                   select: {
                     id: true,
                     segment: true,
+                    role: true,
                   },
                 },
               },
@@ -93,13 +107,63 @@ export class LineAssignmentService {
           },
         }),
       );
+      // NOVA VALIDAÇÃO: Filtrar linhas disponíveis para incluir apenas as que estão Connected
+      // Verificar status de conexão de cada linha antes de tentar atribuir
+      const linesWithConnectionStatus = await Promise.all(
+        availableLines.map(async (line) => {
+          const evolution = await this.prisma.evolution.findUnique({
+            where: { evolutionName: line.evolutionName },
+          });
+
+          if (!evolution) {
+            return { ...line, isConnected: false };
+          }
+
+          const instanceName = `line_${line.phone.replace(/\D/g, '')}`;
+
+          try {
+            const connectionStatus = await this.healthCheckCacheService.getConnectionStatus(
+              evolution.evolutionUrl,
+              evolution.evolutionKey,
+              instanceName
+            );
+
+            const isConnected = connectionStatus === 'open' ||
+                               connectionStatus === 'OPEN' ||
+                               connectionStatus === 'connected' ||
+                               connectionStatus === 'CONNECTED';
+
+            return { ...line, isConnected };
+          } catch (error) {
+            // Em caso de erro ao verificar, considerar como não conectada
+            return { ...line, isConnected: false };
+          }
+        })
+      );
+
+      // Filtrar apenas linhas conectadas
+      const connectedLines = linesWithConnectionStatus.filter(line => line.isConnected);
+
+      if (connectedLines.length === 0) {
+        this.logger.warn(
+          `Nenhuma linha conectada disponível para operador ${user.name}`,
+          'LineAssignment',
+          { userId, userSegment, availableLinesCount: availableLines.length, traceId },
+        );
+        return { success: false, reason: 'Nenhuma linha conectada disponível' };
+      }
+
+      // Usar connectedLines ao invés de availableLines nas buscas
+      const linesToSearch = connectedLines;
+
+
 
       // Prioridade 1: Linhas do segmento do operador (excluindo a linha antiga se fornecida)
-      let candidateLine = availableLines.find((line) => {
+      let candidateLine = linesToSearch.find((line) => {
         if (excludeLineId && line.id === excludeLineId) return false; // IMPORTANTE: Excluir linha antiga
         if (line.segment !== userSegment) return false;
         if (line.operators.length >= 2) return false;
-        // Verificar se não mistura segmentos
+        // Verificar se não mistura segmentos (NUNCA misturar)
         const hasDifferentSegment = line.operators.some(
           (op) => op.user?.segment !== userSegment,
         );
@@ -107,33 +171,36 @@ export class LineAssignmentService {
       });
 
       // Prioridade 2: Linhas com segmento null (excluindo a linha antiga)
+      // Essas linhas nunca foram vinculadas a nenhum segmento
       if (!candidateLine) {
-        candidateLine = availableLines.find((line) => {
+        candidateLine = linesToSearch.find((line) => {
           if (excludeLineId && line.id === excludeLineId) return false;
           if (line.segment !== null) return false;
           if (line.operators.length >= 2) return false;
+          if (line.operators.length > 0) return false; // Linha null NUNCA foi usada, então não pode ter operadores
           return true;
         });
       }
 
       // Prioridade 3: Linhas do segmento "Padrão" (excluindo a linha antiga)
-      if (!candidateLine) {
-        candidateLine = availableLines.find((line) => {
+      // Essas linhas podem ser alocadas para qualquer segmento
+      if (!candidateLine && defaultSegment) {
+        candidateLine = linesToSearch.find((line) => {
           if (excludeLineId && line.id === excludeLineId) return false;
-          if (line.segment !== 'Padrão') return false;
+          if (line.segment !== defaultSegment.id) return false;
           if (line.operators.length >= 2) return false;
+          // Se já tem operadores, verificar se são do mesmo segmento
+          if (line.operators.length > 0) {
+            const hasDifferentSegment = line.operators.some(
+              (op) => op.user?.segment !== userSegment,
+            );
+            return !hasDifferentSegment;
+          }
           return true;
         });
       }
 
-      // Prioridade 4: Qualquer linha disponível (excluindo a linha antiga) - última tentativa
-      if (!candidateLine) {
-        candidateLine = availableLines.find((line) => {
-          if (excludeLineId && line.id === excludeLineId) return false;
-          if (line.operators.length >= 2) return false;
-          return true;
-        });
-      }
+      // NÃO buscar "qualquer linha disponível" - isso causava linhas de segmento X indo para operador Y
 
       if (!candidateLine) {
         this.logger.warn(
@@ -147,13 +214,27 @@ export class LineAssignmentService {
       // Atribuir linha usando método com transaction e lock
       try {
         await this.linesService.assignOperatorToLine(candidateLine.id, userId);
-        
-        // Se a linha tinha segmento null, atualizar para o segmento do operador
-        if (candidateLine.segment === null && userSegment !== null) {
+
+        // REGRA IMPORTANTE: Linha ganha segmento do operador na primeira vinculação
+        // - Se linha tinha segmento null: recebe o segmento do operador
+        // - Se linha era do segmento "Padrão": recebe o segmento do operador
+        // - Depois disso, o segmento da linha NUNCA mais pode ser alterado
+        const shouldUpdateSegment =
+          (candidateLine.segment === null ||
+           (defaultSegment && candidateLine.segment === defaultSegment.id)) &&
+          userSegment !== null;
+
+        if (shouldUpdateSegment) {
           await this.prisma.linesStock.update({
             where: { id: candidateLine.id },
             data: { segment: userSegment },
           });
+
+          this.logger.log(
+            `Linha ${candidateLine.phone} agora pertence ao segmento ${userSegment}`,
+            'LineAssignment',
+            { lineId: candidateLine.id, previousSegment: candidateLine.segment, newSegment: userSegment },
+          );
         }
 
         this.logger.log(
