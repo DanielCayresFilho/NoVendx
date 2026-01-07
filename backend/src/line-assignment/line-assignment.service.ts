@@ -128,10 +128,18 @@ export class LineAssignmentService {
               instanceName
             );
 
-            const isConnected = connectionStatus === 'open' ||
-                               connectionStatus === 'OPEN' ||
-                               connectionStatus === 'connected' ||
-                               connectionStatus === 'CONNECTED';
+            // Considerar conectada se NÃO for explicitamente desconectada/conectando
+            // 'unknown' e outros status são permitidos
+            const isDisconnected = connectionStatus === 'close' ||
+                                  connectionStatus === 'CLOSE' ||
+                                  connectionStatus === 'disconnected' ||
+                                  connectionStatus === 'DISCONNECTED' ||
+                                  connectionStatus === 'closeTimeout';
+
+            const isConnecting = connectionStatus === 'connecting' ||
+                                connectionStatus === 'CONNECTING';
+
+            const isConnected = !isDisconnected && !isConnecting;
 
             return { ...line, isConnected };
           } catch (error) {

@@ -1178,13 +1178,8 @@ export class LinesService {
             instanceName
           );
 
-          // Verificar se status é 'Connected' (open, OPEN, connected, CONNECTED)
-          const isConnected = connectionStatus === 'open' ||
-                             connectionStatus === 'OPEN' ||
-                             connectionStatus === 'connected' ||
-                             connectionStatus === 'CONNECTED';
-
-          // Rejeitar se status for 'Disconnected' ou 'Connecting'
+          // BLOQUEAR apenas status explicitamente desconectados ou conectando
+          // Status 'unknown' é permitido (pode ser cache ou problema temporário da API)
           const isDisconnected = connectionStatus === 'close' ||
                                 connectionStatus === 'CLOSE' ||
                                 connectionStatus === 'disconnected' ||
@@ -1195,19 +1190,15 @@ export class LinesService {
                               connectionStatus === 'CONNECTING';
 
           if (isDisconnected) {
-            throw new BadRequestException(`Linha ${line.phone} está desconectada. Não é possível vincular ao operador.`);
+            throw new BadRequestException(`Linha ${line.phone} está desconectada (${connectionStatus}). Não é possível vincular ao operador.`);
           }
 
           if (isConnecting) {
-            throw new BadRequestException(`Linha ${line.phone} está se conectando. Aguarde a conexão ser estabelecida antes de vincular.`);
+            throw new BadRequestException(`Linha ${line.phone} está se conectando (${connectionStatus}). Aguarde a conexão ser estabelecida antes de vincular.`);
           }
 
-          if (!isConnected) {
-            // Status desconhecido ou outro status inválido
-            throw new BadRequestException(`Linha ${line.phone} não está em estado 'Connected' (status atual: ${connectionStatus}). Somente linhas conectadas podem ser vinculadas.`);
-          }
-
-          console.log(`✅ [assignOperatorToLine] Linha ${line.phone} validada como Connected (${connectionStatus})`);
+          // Se chegou aqui, status é 'open', 'connected' ou 'unknown' - todos permitidos
+          console.log(`✅ [assignOperatorToLine] Linha ${line.phone} validada (status: ${connectionStatus})`);
         } catch (healthError: any) {
           // Se já for um BadRequestException, relançar
           if (healthError instanceof BadRequestException) {
