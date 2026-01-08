@@ -1212,14 +1212,60 @@ export class LinesService {
 
       }
 
+      // Buscar informações do operador (usuário)
+      const operator = await tx.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!operator) {
+        throw new NotFoundException('Operador não encontrado');
+      }
+
       // Verificar se o modo compartilhado está ativo
       const controlPanel = await this.controlPanelService.findOne();
       const sharedLineMode = controlPanel?.sharedLineMode ?? false;
 
-      // Contar operadores atuais (sempre necessário para verificar se é o primeiro)
-      const currentOperators = await tx.lineOperator.count({
+      // Contar operadores atuais e buscar seus segmentos
+      const existingOperators = await tx.lineOperator.findMany({
         where: { lineId },
+        include: {
+          user: {
+            select: { segment: true, name: true },
+          },
+        },
       });
+
+      const currentOperators = existingOperators.length;
+
+      // VALIDAÇÃO CRÍTICA: NUNCA permitir que operadores de segmentos diferentes compartilhem a mesma linha
+      // Buscar segmento "Padrão" para verificar
+      const defaultSegment = await tx.segment.findUnique({
+        where: { name: 'Padrão' },
+      });
+
+      if (existingOperators.length > 0) {
+        // Se já tem operadores na linha, verificar segmentos
+        for (const existingOp of existingOperators) {
+          const existingSegment = existingOp.user.segment;
+          const newSegment = operator.segment;
+
+          // Se os segmentos são diferentes E nenhum deles é null, BLOQUEAR
+          if (existingSegment !== null && newSegment !== null && existingSegment !== newSegment) {
+            throw new BadRequestException(
+              `SEGURANÇA: Não é possível vincular operador do segmento ${newSegment} a uma linha que já possui operador do segmento ${existingSegment}. Segmentos diferentes NÃO podem compartilhar a mesma linha.`
+            );
+          }
+
+          // Se a linha tem segmento definido E não é "Padrão" E é diferente do operador, BLOQUEAR
+          if (line.segment !== null &&
+              (!defaultSegment || line.segment !== defaultSegment.id) &&
+              line.segment !== newSegment) {
+            throw new BadRequestException(
+              `SEGURANÇA: Linha pertence ao segmento ${line.segment}, mas operador pertence ao segmento ${newSegment}. Não é possível vincular.`
+            );
+          }
+        }
+      }
 
       // Verificar se a linha já tem o máximo de operadores (com lock)
       // No modo compartilhado, não há limite de operadores
@@ -1285,6 +1331,21 @@ export class LinesService {
           where: { id: lineId },
           data: { linkedTo: userId },
         });
+      }
+
+      // REGRA CRÍTICA: Se a linha é do segmento "Padrão" OU tem segmento null, atualizar para o segmento do operador
+      // Isso garante que linhas "Padrão" se tornem permanentemente do segmento do primeiro operador vinculado
+      const shouldUpdateSegment = operator.segment !== null &&
+                                  (line.segment === null ||
+                                   (defaultSegment && line.segment === defaultSegment.id));
+
+      if (shouldUpdateSegment) {
+        await tx.linesStock.update({
+          where: { id: lineId },
+          data: { segment: operator.segment },
+        });
+
+        console.log(`🔄 [assignOperatorToLine] Linha ${line.phone} agora pertence ao segmento ${operator.segment} (era ${line.segment === null ? 'null' : `segmento ${line.segment}`})`);
       }
 
       console.log(`✅ Operador ${userId} vinculado à linha ${lineId} (com lock)`);
