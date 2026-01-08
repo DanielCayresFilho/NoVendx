@@ -157,55 +157,12 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
         // Se for operador sem linha, verificar se há linha disponível para vincular
         // IMPORTANTE: Admins NÃO recebem linhas automaticamente
         if (!user.line && user.role === 'operator') {
+          // Usar LineAssignmentService centralizado que já tem a lógica de priorização correta
+          const assignmentResult = await this.lineAssignmentService.findAvailableLineForOperator(user.id, user.segment);
+
           let availableLine = null;
-
-          // 1. Primeiro, tentar buscar linha do mesmo segmento do operador
-          if (user.segment) {
-            const segmentLines = await this.prisma.linesStock.findMany({
-              where: {
-                lineStatus: 'active',
-                segment: user.segment,
-              },
-            });
-
-            // Filtrar por evolutions ativas
-            const filteredLines = await this.controlPanelService.filterLinesByActiveEvolutions(segmentLines, user.segment);
-            // Usar LineAssignmentService (centralizado)
-            const assignmentResult = await this.lineAssignmentService.findAvailableLineForOperator(user.id, user.segment);
-            if (assignmentResult.success && assignmentResult.lineId) {
-              availableLine = await this.prisma.linesStock.findUnique({ where: { id: assignmentResult.lineId } });
-            }
-          }
-
-          // 2. Se não encontrou linha do segmento, buscar linha padrão (segmento "Padrão")
-          if (!availableLine && user.segment) {
-            // Buscar o segmento "Padrão" pelo nome
-            const defaultSegment = await this.prisma.segment.findUnique({
-              where: { name: 'Padrão' },
-            });
-
-            if (defaultSegment) {
-              const defaultLines = await this.prisma.linesStock.findMany({
-                where: {
-                  lineStatus: 'active',
-                  segment: defaultSegment.id, // Linhas padrão (segmento "Padrão")
-                },
-              });
-
-              // Filtrar por evolutions ativas
-              const filteredDefaultLines = await this.controlPanelService.filterLinesByActiveEvolutions(defaultLines, user.segment);
-              availableLine = await this.findAvailableLineForOperator(filteredDefaultLines, user.id, user.segment);
-
-              // Se encontrou linha padrão e operador tem segmento, atualizar o segmento da linha
-              if (availableLine && user.segment) {
-                await this.prisma.linesStock.update({
-                  where: { id: availableLine.id },
-                  data: { segment: user.segment },
-                });
-
-                availableLine.segment = user.segment; // Atualizar objeto local
-              }
-            }
+          if (assignmentResult.success && assignmentResult.lineId) {
+            availableLine = await this.prisma.linesStock.findUnique({ where: { id: assignmentResult.lineId } });
           }
 
           if (availableLine) {
@@ -448,17 +405,26 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
             console.log(`📋 [WebSocket] Operador ${user.name} não tem linha - enviando apenas suas conversas`);
             activeConversations = await this.conversationsService.findActiveConversations(undefined, user.id);
           } else {
-            // MODO COMPARTILHADO: Buscar todos os operadores da mesma linha
-            const lineOperators = await (this.prisma as any).lineOperator.findMany({
-              where: { lineId: currentLineId },
-              select: { userId: true },
-            });
+            // Verificar se modo compartilhado está ativo
+            const controlPanel = await this.controlPanelService.findOne();
+            const sharedLineMode = controlPanel?.sharedLineMode ?? false;
 
-            const userIds = lineOperators.map(lo => lo.userId);
-            console.log(`📋 [WebSocket] Operador ${user.name} está na linha ${currentLineId} com ${userIds.length} operador(es) - enviando conversas de todos`);
+            if (sharedLineMode) {
+              // MODO COMPARTILHADO ATIVO: Buscar conversas de TODOS os operadores da mesma linha
+              const lineOperators = await (this.prisma as any).lineOperator.findMany({
+                where: { lineId: currentLineId },
+                select: { userId: true },
+              });
 
-            // Buscar conversas de TODOS os operadores da linha compartilhada
-            activeConversations = await this.conversationsService.findActiveConversationsByUserIds(userIds);
+              const userIds = lineOperators.map(lo => lo.userId);
+              console.log(`📋 [WebSocket] [MODO COMPARTILHADO] Operador ${user.name} está na linha ${currentLineId} com ${userIds.length} operador(es) - enviando conversas de todos`);
+
+              activeConversations = await this.conversationsService.findActiveConversationsByUserIds(userIds);
+            } else {
+              // MODO NORMAL: Operador vê apenas suas próprias conversas
+              console.log(`📋 [WebSocket] [MODO NORMAL] Operador ${user.name} está na linha ${currentLineId} - enviando apenas suas conversas`);
+              activeConversations = await this.conversationsService.findActiveConversations(undefined, user.id);
+            }
           }
         }
 
@@ -662,11 +628,16 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
 
     // Se operador não tem linha, tentar atribuir automaticamente
     if (!currentLineId) {
-      
+
       let availableLine = null;
 
-      // 1. Primeiro, tentar buscar linha do mesmo segmento do operador
-      if (user.segment) {
+      // Buscar segmento "Padrão" uma única vez
+      const defaultSegment = await this.prisma.segment.findUnique({
+        where: { name: 'Padrão' },
+      });
+
+      // PRIORIDADE 1: Linha do segmento do operador SEM operadores
+      if (user.segment && !availableLine) {
         const segmentLines = await this.prisma.linesStock.findMany({
           where: {
             lineStatus: 'active',
@@ -674,147 +645,156 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
           },
         });
 
-        // Filtrar por evolutions ativas
         const filteredLines = await this.controlPanelService.filterLinesByActiveEvolutions(segmentLines, user.segment);
-        availableLine = await this.findAvailableLineForOperator(filteredLines, user.id, user.segment);
-      }
 
-      // 2. Se não encontrou linha do segmento, buscar linha padrão (segmento "Padrão")
-      if (!availableLine) {
-        const defaultSegment = await this.prisma.segment.findUnique({
-          where: { name: 'Padrão' },
-        });
-
-        if (defaultSegment) {
-          const defaultLines = await this.prisma.linesStock.findMany({
-            where: {
-              lineStatus: 'active',
-              segment: defaultSegment.id, // Segmento "Padrão" pelo ID
-            },
+        for (const line of filteredLines) {
+          const operatorsCount = await (this.prisma as any).lineOperator.count({
+            where: { lineId: line.id },
           });
 
-          // Filtrar por evolutions ativas
-          const filteredDefaultLines = await this.controlPanelService.filterLinesByActiveEvolutions(defaultLines, user.segment);
-          
-          // Buscar linha disponível (com menos de 2 operadores)
-          for (const line of filteredDefaultLines) {
-            const operatorsCount = await (this.prisma as any).lineOperator.count({
-              where: { lineId: line.id },
-            });
-            
-            if (operatorsCount < 2) {
-              availableLine = line;
-              break;
-            }
-          }
-
-          // Se encontrou linha padrão e operador tem segmento, atualizar o segmento da linha
-          if (availableLine && user.segment) {
-            await this.prisma.linesStock.update({
-              where: { id: availableLine.id },
-              data: { segment: user.segment },
-            });
+          if (operatorsCount === 0) {
+            availableLine = line;
+            console.log(`📌 [WebSocket] [PRIORIDADE 1] Linha do segmento ${user.segment} sem operadores encontrada: ${line.phone}`);
+            break;
           }
         }
       }
 
-      if (availableLine) {
-        // Verificar quantos operadores já estão vinculados
-        const currentOperatorsCount = await (this.prisma as any).lineOperator.count({
-          where: { lineId: availableLine.id },
+      // PRIORIDADE 2: Linha do segmento "Padrão" SEM operadores
+      if (!availableLine && defaultSegment) {
+        const defaultLines = await this.prisma.linesStock.findMany({
+          where: {
+            lineStatus: 'active',
+            segment: defaultSegment.id,
+          },
         });
 
-        if (currentOperatorsCount < 2) {
-          // Verificar se a linha já tem operadores de outro segmento
+        const filteredDefaultLines = await this.controlPanelService.filterLinesByActiveEvolutions(defaultLines, user.segment);
+
+        for (const line of filteredDefaultLines) {
+          const operatorsCount = await (this.prisma as any).lineOperator.count({
+            where: { lineId: line.id },
+          });
+
+          if (operatorsCount === 0) {
+            availableLine = line;
+            console.log(`📌 [WebSocket] [PRIORIDADE 2] Linha do segmento Padrão sem operadores encontrada: ${line.phone}`);
+            break;
+          }
+        }
+      }
+
+      // PRIORIDADE 3: Linha do segmento do operador COM 1 operador (dividir)
+      if (user.segment && !availableLine) {
+        const segmentLines = await this.prisma.linesStock.findMany({
+          where: {
+            lineStatus: 'active',
+            segment: user.segment,
+          },
+        });
+
+        const filteredLines = await this.controlPanelService.filterLinesByActiveEvolutions(segmentLines, user.segment);
+
+        for (const line of filteredLines) {
           const existingOperators = await (this.prisma as any).lineOperator.findMany({
-            where: { lineId: availableLine.id },
+            where: { lineId: line.id },
             include: { user: true },
           });
 
-          // Se a linha já tem operadores, verificar se são do mesmo segmento
-          if (existingOperators.length > 0) {
-            const allSameSegment = existingOperators.every((lo: any) => 
-              lo.user.segment === user.segment
-            );
-            
-            if (!allSameSegment) {
-              // Linha já tem operador de outro segmento, não pode atribuir
-              availableLine = null;
-            }
-          }
-
-          // Só vincular se passou na validação de segmento
-          if (availableLine) {
-            // Vincular operador à linha usando método com transaction + lock
-            try {
-              await this.linesService.assignOperatorToLine(availableLine.id, user.id);
-              
-              // Atualizar user object e currentLineId
-              user.line = availableLine.id;
-              currentLineId = availableLine.id;
-
-              console.log(`✅ [WebSocket] Linha ${availableLine.phone} atribuída automaticamente ao operador ${user.name} (segmento ${availableLine.segment || 'sem segmento'})`);
-              
-              // Notificação removida - operador não precisa saber
-            } catch (error) {
-              console.error(`❌ [WebSocket] Erro ao vincular linha ${availableLine.id} ao operador ${user.id}:`, error.message);
-              // Continuar para tentar outra linha
-              availableLine = null;
+          if (existingOperators.length === 1) {
+            // Verificar se o operador existente é do mesmo segmento
+            if (existingOperators[0].user.segment === user.segment) {
+              availableLine = line;
+              console.log(`📌 [WebSocket] [PRIORIDADE 3] Linha do segmento ${user.segment} com 1 operador encontrada (dividir): ${line.phone}`);
+              break;
             }
           }
         }
       }
 
-      // 3. Se ainda não tem linha, fazer busca ULTRA AMPLA (qualquer linha ativa com menos de 2 operadores, ignorando validações de segmento)
-      if (!currentLineId) {
-        console.log(`🔄 [WebSocket] Buscando qualquer linha ativa disponível para operador ${user.name}...`);
-        
-        // Buscar qualquer linha ativa (sem filtro de segmento)
+      // PRIORIDADE 4: Linha do segmento "Padrão" COM 1 operador (dividir)
+      if (!availableLine && defaultSegment) {
+        const defaultLines = await this.prisma.linesStock.findMany({
+          where: {
+            lineStatus: 'active',
+            segment: defaultSegment.id,
+          },
+        });
+
+        const filteredDefaultLines = await this.controlPanelService.filterLinesByActiveEvolutions(defaultLines, user.segment);
+
+        for (const line of filteredDefaultLines) {
+          const existingOperators = await (this.prisma as any).lineOperator.findMany({
+            where: { lineId: line.id },
+            include: { user: true },
+          });
+
+          if (existingOperators.length === 1) {
+            // Verificar se o operador existente é do mesmo segmento (ou aceitar qualquer segmento para linhas padrão)
+            const sameSegment = existingOperators[0].user.segment === user.segment;
+            if (sameSegment || user.segment === null || existingOperators[0].user.segment === null) {
+              availableLine = line;
+              console.log(`📌 [WebSocket] [PRIORIDADE 4] Linha do segmento Padrão com 1 operador encontrada (dividir): ${line.phone}`);
+              break;
+            }
+          }
+        }
+      }
+
+      // PRIORIDADE 5: APENAS se não houver linhas do segmento "Padrão" disponíveis, buscar outras linhas para dividir
+      if (!availableLine) {
+        console.log(`🔄 [WebSocket] [PRIORIDADE 5] Nenhuma linha do segmento Padrão disponível. Buscando outras linhas para dividir...`);
+
         const anyActiveLines = await this.prisma.linesStock.findMany({
           where: {
             lineStatus: 'active',
           },
         });
-        
-        // Filtrar por evolutions ativas
+
         const filteredAnyLines = await this.controlPanelService.filterLinesByActiveEvolutions(anyActiveLines, user.segment);
-        
-        // Buscar QUALQUER linha com menos de 2 operadores (ignorar validação de segmento)
+
         for (const line of filteredAnyLines) {
-          const currentOperatorsCount = await (this.prisma as any).lineOperator.count({
+          // Pular se for linha do segmento do operador ou do segmento "Padrão" (já tentamos acima)
+          if (line.segment === user.segment || (defaultSegment && line.segment === defaultSegment.id)) {
+            continue;
+          }
+
+          const existingOperators = await (this.prisma as any).lineOperator.findMany({
             where: { lineId: line.id },
+            include: { user: true },
           });
-          
-          // Se tem menos de 2 operadores, pode atribuir (mesmo que tenha operador de outro segmento)
-          if (currentOperatorsCount < 2) {
-            try {
-              await this.linesService.assignOperatorToLine(line.id, user.id);
-              
-              // Atualizar segmento da linha se operador tem segmento e linha não tem
-              if (user.segment && !line.segment) {
-                await this.prisma.linesStock.update({
-                  where: { id: line.id },
-                  data: { segment: user.segment },
-                });
-              }
-              
-              user.line = line.id;
-              currentLineId = line.id;
-              
-              console.log(`✅ [WebSocket] Linha ${line.phone} atribuída ao operador ${user.name} (busca ampla, segmento: ${line.segment || 'sem segmento'})`);
-              break; // Encontrou e atribuiu, sair do loop
-            } catch (error: any) {
-              // Se o erro for "já está vinculado", usar essa linha mesmo assim
-              if (error.message?.includes('já está vinculado')) {
-                user.line = line.id;
-                currentLineId = line.id;
-                console.log(`✅ [WebSocket] Operador ${user.name} já estava vinculado à linha ${line.phone}`);
-                break;
-              }
-              // Se der outro erro, tentar próxima linha
-              console.warn(`⚠️ [WebSocket] Erro ao vincular linha ${line.id} (${line.phone}) ao operador ${user.id}:`, error.message);
+
+          if (existingOperators.length === 1) {
+            // Verificar se o operador existente é do mesmo segmento
+            if (existingOperators[0].user.segment === user.segment) {
+              availableLine = line;
+              console.log(`📌 [WebSocket] [PRIORIDADE 5] Linha de outro segmento com 1 operador do mesmo segmento encontrada (dividir): ${line.phone}`);
+              break;
             }
           }
+        }
+      }
+
+      // Tentar vincular a linha encontrada
+      if (availableLine) {
+        try {
+          await this.linesService.assignOperatorToLine(availableLine.id, user.id);
+
+          // Atualizar segmento da linha se for do segmento "Padrão" e operador tem segmento
+          if (defaultSegment && availableLine.segment === defaultSegment.id && user.segment) {
+            await this.prisma.linesStock.update({
+              where: { id: availableLine.id },
+              data: { segment: user.segment },
+            });
+          }
+
+          user.line = availableLine.id;
+          currentLineId = availableLine.id;
+
+          console.log(`✅ [WebSocket] Linha ${availableLine.phone} atribuída ao operador ${user.name} (segmento ${availableLine.segment || 'sem segmento'})`);
+        } catch (error: any) {
+          console.error(`❌ [WebSocket] Erro ao vincular linha ${availableLine.id} ao operador ${user.id}:`, error.message);
+          availableLine = null;
         }
       }
       
@@ -2166,8 +2146,13 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
       // Buscar nova linha disponível
       let availableLine = null;
 
-      // 1. Primeiro, tentar buscar linha do mesmo segmento do operador
-      if (userSegment) {
+      // Buscar segmento "Padrão" uma única vez
+      const defaultSegment = await this.prisma.segment.findUnique({
+        where: { name: 'Padrão' },
+      });
+
+      // PRIORIDADE 1: Linha do segmento do operador SEM operadores
+      if (userSegment && !availableLine) {
         const segmentLines = await this.prisma.linesStock.findMany({
           where: {
             lineStatus: 'active',
@@ -2175,72 +2160,132 @@ export class WebsocketGateway implements OnGatewayConnection, OnGatewayDisconnec
           },
         });
 
-        // Filtrar por evolutions ativas
         const filteredLines = await this.controlPanelService.filterLinesByActiveEvolutions(segmentLines, userSegment);
-        availableLine = await this.findAvailableLineForOperator(filteredLines, userId, userSegment);
-      }
 
-      // 2. Se não encontrou linha do segmento, buscar linha padrão
-      if (!availableLine) {
-        const defaultSegment = await this.prisma.segment.findUnique({
-          where: { name: 'Padrão' },
-        });
-
-        if (defaultSegment) {
-          const defaultLines = await this.prisma.linesStock.findMany({
-            where: {
-              lineStatus: 'active',
-              segment: defaultSegment.id,
-            },
+        for (const line of filteredLines) {
+          const operatorsCount = await (this.prisma as any).lineOperator.count({
+            where: { lineId: line.id },
           });
 
-          // Filtrar por evolutions ativas
-          const filteredDefaultLines = await this.controlPanelService.filterLinesByActiveEvolutions(defaultLines, userSegment);
-          
-          // Buscar linha disponível manualmente (sem usar findAvailableLineForOperator que pode ser muito restritivo)
-          for (const line of filteredDefaultLines) {
-            const operatorsCount = await (this.prisma as any).lineOperator.count({
-              where: { lineId: line.id },
-            });
-            
-            if (operatorsCount < 2) {
-              availableLine = line;
-              break;
-            }
-          }
-
-          // Se encontrou linha padrão e operador tem segmento, atualizar o segmento da linha
-          if (availableLine && userSegment) {
-            await this.prisma.linesStock.update({
-              where: { id: availableLine.id },
-              data: { segment: userSegment },
-            });
+          if (operatorsCount === 0) {
+            availableLine = line;
+            console.log(`📌 [Realocação] [PRIORIDADE 1] Linha do segmento ${userSegment} sem operadores encontrada: ${line.phone}`);
+            break;
           }
         }
       }
 
-      // 3. ÚLTIMA TENTATIVA: Se ainda não encontrou, buscar QUALQUER linha ativa com menos de 2 operadores (ignorando segmento)
+      // PRIORIDADE 2: Linha do segmento "Padrão" SEM operadores
+      if (!availableLine && defaultSegment) {
+        const defaultLines = await this.prisma.linesStock.findMany({
+          where: {
+            lineStatus: 'active',
+            segment: defaultSegment.id,
+          },
+        });
+
+        const filteredDefaultLines = await this.controlPanelService.filterLinesByActiveEvolutions(defaultLines, userSegment);
+
+        for (const line of filteredDefaultLines) {
+          const operatorsCount = await (this.prisma as any).lineOperator.count({
+            where: { lineId: line.id },
+          });
+
+          if (operatorsCount === 0) {
+            availableLine = line;
+            console.log(`📌 [Realocação] [PRIORIDADE 2] Linha do segmento Padrão sem operadores encontrada: ${line.phone}`);
+            break;
+          }
+        }
+      }
+
+      // PRIORIDADE 3: Linha do segmento do operador COM 1 operador (dividir)
+      if (userSegment && !availableLine) {
+        const segmentLines = await this.prisma.linesStock.findMany({
+          where: {
+            lineStatus: 'active',
+            segment: userSegment,
+          },
+        });
+
+        const filteredLines = await this.controlPanelService.filterLinesByActiveEvolutions(segmentLines, userSegment);
+
+        for (const line of filteredLines) {
+          const existingOperators = await (this.prisma as any).lineOperator.findMany({
+            where: { lineId: line.id },
+            include: { user: true },
+          });
+
+          if (existingOperators.length === 1) {
+            // Verificar se o operador existente é do mesmo segmento
+            if (existingOperators[0].user.segment === userSegment) {
+              availableLine = line;
+              console.log(`📌 [Realocação] [PRIORIDADE 3] Linha do segmento ${userSegment} com 1 operador encontrada (dividir): ${line.phone}`);
+              break;
+            }
+          }
+        }
+      }
+
+      // PRIORIDADE 4: Linha do segmento "Padrão" COM 1 operador (dividir)
+      if (!availableLine && defaultSegment) {
+        const defaultLines = await this.prisma.linesStock.findMany({
+          where: {
+            lineStatus: 'active',
+            segment: defaultSegment.id,
+          },
+        });
+
+        const filteredDefaultLines = await this.controlPanelService.filterLinesByActiveEvolutions(defaultLines, userSegment);
+
+        for (const line of filteredDefaultLines) {
+          const existingOperators = await (this.prisma as any).lineOperator.findMany({
+            where: { lineId: line.id },
+            include: { user: true },
+          });
+
+          if (existingOperators.length === 1) {
+            // Verificar se o operador existente é do mesmo segmento (ou aceitar qualquer segmento para linhas padrão)
+            const sameSegment = existingOperators[0].user.segment === userSegment;
+            if (sameSegment || userSegment === null || existingOperators[0].user.segment === null) {
+              availableLine = line;
+              console.log(`📌 [Realocação] [PRIORIDADE 4] Linha do segmento Padrão com 1 operador encontrada (dividir): ${line.phone}`);
+              break;
+            }
+          }
+        }
+      }
+
+      // PRIORIDADE 5: APENAS se não houver linhas do segmento "Padrão" disponíveis, buscar outras linhas para dividir
       if (!availableLine) {
-        console.log(`🔄 [WebSocket] Realocação: Buscando qualquer linha ativa disponível...`);
+        console.log(`🔄 [Realocação] [PRIORIDADE 5] Nenhuma linha do segmento Padrão disponível. Buscando outras linhas para dividir...`);
+
         const anyActiveLines = await this.prisma.linesStock.findMany({
           where: {
             lineStatus: 'active',
           },
         });
 
-        // Filtrar por evolutions ativas
         const filteredAnyLines = await this.controlPanelService.filterLinesByActiveEvolutions(anyActiveLines, userSegment || undefined);
 
-        // Buscar QUALQUER linha com menos de 2 operadores
         for (const line of filteredAnyLines) {
-          const operatorsCount = await (this.prisma as any).lineOperator.count({
+          // Pular se for linha do segmento do operador ou do segmento "Padrão" (já tentamos acima)
+          if (line.segment === userSegment || (defaultSegment && line.segment === defaultSegment.id)) {
+            continue;
+          }
+
+          const existingOperators = await (this.prisma as any).lineOperator.findMany({
             where: { lineId: line.id },
+            include: { user: true },
           });
-          
-          if (operatorsCount < 2) {
-            availableLine = line;
-            console.log(`✅ [WebSocket] Realocação: Linha ${line.phone} encontrada (busca ampla)`);
-            break;
+
+          if (existingOperators.length === 1) {
+            // Verificar se o operador existente é do mesmo segmento
+            if (existingOperators[0].user.segment === userSegment) {
+              availableLine = line;
+              console.log(`📌 [Realocação] [PRIORIDADE 5] Linha de outro segmento com 1 operador do mesmo segmento encontrada (dividir): ${line.phone}`);
+              break;
+            }
           }
         }
       }
